@@ -20,7 +20,8 @@ for task, (input_path, output_path) in task_type_to_datapath_dict.items():
     for (start, end) in example['candidate_chunks_offsets']:
       cid = (ex_id, start, end)
       c_txt = ex_txt[start:end]
-      ctxt2id[c_txt] = len(ctxt2id)
+      if c_txt not in ctxt2id:
+        ctxt2id[c_txt] = len(ctxt2id)
       cid2id[cid] = ctxt2id[c_txt]
   with open(output_path, 'w') as f:
     json.dump(ctxt2id, f)
