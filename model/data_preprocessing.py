@@ -412,7 +412,7 @@ def main():
 	logging.info(f"Total annotations:{len(dataset)}")
 	logging.info(f"Creating labeled data instances from annotations...")
 	print(dataset[0].keys())
-	ctxt2id = json.load(open(args.data_file.replace('.jsonl', '_ctxt2id.json')))
+	ctxt2id = json.load(open(args.save_file.replace('.pkl', '_ctxt2id.json')))
 	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset, ctxt2id)
 	# Save in pickle file
 	logging.info(f"Saving all the instances, statistics and labels in {args.save_file}")
