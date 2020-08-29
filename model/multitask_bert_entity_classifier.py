@@ -120,7 +120,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 				embedding_dim=embs_dim
 			)
 
-			self.cake_embs.weight = nn.Parameter(embs)
+			self.cake_embs.weight = nn.Parameter(torch.from_numpy(embs).float())
 			self.cake_embs.weight.requires_grad = False
 
 		self.bert = BertModel(config)
