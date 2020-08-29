@@ -288,7 +288,7 @@ def make_instances_from_dataset(dataset, ctxt2id):
 
 			# If there are more then one candidate slot with the same candidate chunk then simply keep the first occurrence. Remove the rest.
 			current_candidate_chunks = set()
-			assert len(candidate_chunk_cake_id) == len(final_candidate_chunks_with_token_id)
+			assert len(candidate_chunk_cake_ids) == len(final_candidate_chunks_with_token_id)
 			for candidate_chunk_with_id, candidate_chunk_cake_id in zip(final_candidate_chunks_with_token_id, candidate_chunk_cake_ids):
 				candidate_chunk_id = candidate_chunk_with_id[0]
 				candidate_chunk = candidate_chunk_with_id[1]
