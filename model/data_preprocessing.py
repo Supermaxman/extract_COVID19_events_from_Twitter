@@ -115,7 +115,7 @@ def get_tweet_tokens_from_tags(tags):
 	tokens = [e.rsplit("/", 3)[0] for e in tags.split()]
 	return ' '.join(tokens)
 
-def make_instances_from_dataset(dataset):
+def make_instances_from_dataset(dataset, ctxt2id):
 	# Create instances for all each task.
 	# we will store instances for each task separately in a dictionary
 	task_instances_dict = dict()
@@ -150,6 +150,7 @@ def make_instances_from_dataset(dataset):
 	gold_labels_unique_tweets = {question_tag: dict() for question_tag, question_key in question_keys_and_tags}
 	skipped_chunks = 0
 	ignore_ones = []
+
 	for annotated_data in dataset:
 		# We will take one annotation and generate who instances based on the chunks
 		id = annotated_data['id']
@@ -178,8 +179,10 @@ def make_instances_from_dataset(dataset):
 		# print(tweet_tokens_char_mapping)
 		# Get candidate_chunk's offsets in terms of tweet_tokens
 		candidate_chunks_offsets_from_tweet_tokens = list()
+		candidate_chunk_cake_ids = list()
 		ignore_flags = list()
 		for chunk_start_idx, chunk_end_idx in candidate_chunks_offsets:
+			chunk_cake_id = ctxt2id[text[chunk_start_idx:chunk_end_idx]]
 			ignore_flag = False
 			# Find the tweet_token id in which the chunk_start_idx belongs
 			chunk_start_token_idx = None
@@ -212,6 +215,8 @@ def make_instances_from_dataset(dataset):
 				ignore_ones.append(ignore_info)
 			ignore_flags.append(ignore_flag)
 			candidate_chunks_offsets_from_tweet_tokens.append((chunk_start_token_idx, chunk_end_token_idx))
+			if not ignore_flag:
+				candidate_chunk_cake_ids.append(chunk_cake_id)
 		candidate_chunks_from_tokens = [' '.join(tweet_tokens[c[0]:c[1]]) for c in candidate_chunks_offsets_from_tweet_tokens]
 
 		# TODO: Verify if the candidate_chunks from tokens and from text are the same
@@ -273,18 +278,19 @@ def make_instances_from_dataset(dataset):
 			if question_tag in ["name", "close_contact", "who_cure", "opinion"]:
 				# add "AUTHOR OF THE TWEET" as a candidate chunk
 				final_candidate_chunks_with_token_id.append(["author_chunk", "AUTHOR OF THE TWEET", [0,0]])
+				candidate_chunk_cake_ids.append(0)
 				# print(final_candidate_chunks_with_token_id)
 				# exit()
 			elif question_tag in ["where", "recent_travel"]:
 				# add "NEAR AUTHOR OF THE TWEET" as a candidate chunk
 				final_candidate_chunks_with_token_id.append(["near_author_chunk", "AUTHOR OF THE TWEET", [0,0]])
+				candidate_chunk_cake_ids.append(0)
 
 			# If there are more then one candidate slot with the same candidate chunk then simply keep the first occurrence. Remove the rest.
 			current_candidate_chunks = set()
-			for candidate_chunk_with_id in final_candidate_chunks_with_token_id:
+			for candidate_chunk_with_id, candidate_chunk_cake_id in zip(final_candidate_chunks_with_token_id, candidate_chunk_cake_ids):
 				candidate_chunk_id = candidate_chunk_with_id[0]
 				candidate_chunk = candidate_chunk_with_id[1]
-
 
 				if candidate_chunk.lower() == 'coronavirus':
 					continue
@@ -356,8 +362,20 @@ def make_instances_from_dataset(dataset):
 
 				# Add instance
 				tokenized_tweet = ' '.join(final_tweet_tokens)
+
 				# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-				task_instances_dict[question_tag].append((text, candidate_chunk, candidate_chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, ' '.join(final_tweet_tokens[:chunk_start_id] + [Q_TOKEN] + final_tweet_tokens[chunk_end_id:]), tagged_chunks, question_label))
+				task_instances_dict[question_tag].append(
+					(text,
+					 candidate_chunk,
+					 candidate_chunk_id,
+					 chunk_start_text_id,
+					 chunk_end_text_id,
+					 tokenized_tweet,
+					 ' '.join(final_tweet_tokens[:chunk_start_id] + [Q_TOKEN] + final_tweet_tokens[chunk_end_id:]),
+					 tagged_chunks,
+					 question_label,
+					 candidate_chunk_cake_id)
+				)
 				# Update statistics for data analysis
 				# if (tagged_chunks and len(tagged_chunks) == 1 and tagged_chunks[0] == "Not Specified") or question_label == 0:
 				gold_labels_stats[question_tag].setdefault(question_label, 0)
@@ -394,7 +412,8 @@ def main():
 	logging.info(f"Total annotations:{len(dataset)}")
 	logging.info(f"Creating labeled data instances from annotations...")
 	print(dataset[0].keys())
-	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset)
+	ctxt2id = json.load(open(args.data_file.replace('.jsonl', '_ctxt2id.json')))
+	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset, ctxt2id)
 	# Save in pickle file
 	logging.info(f"Saving all the instances, statistics and labels in {args.save_file}")
 	save_in_pickle((task_instances_dict, tag_statistics, question_keys_and_tags), args.save_file)
