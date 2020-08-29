@@ -229,7 +229,7 @@ class TokenizeCollator():
 		all_bert_model_input_texts = list()
 		gold_labels = {subtask: list() for subtask in self.subtasks}
 		# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-		for text, cake_id, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:
+		for text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:
 			tokenized_tweet_with_masked_chunk = self.fix_user_mentions_in_tokenized_tweet(tokenized_tweet_with_masked_chunk)
 			if chunk in ["AUTHOR OF THE TWEET", "NEAR AUTHOR OF THE TWEET"]:
 				# First element of the text will be considered as AUTHOR OF THE TWEET or NEAR AUTHOR OF THE TWEET
@@ -241,6 +241,7 @@ class TokenizeCollator():
 				bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> " + chunk + " </E>")
 			all_bert_model_input_texts.append(bert_model_input_text)
 			# Add subtask labels in the gold_labels dictionary
+
 			for subtask in self.subtasks:
 				gold_labels[subtask].append(subtask_labels_dict[subtask][1])
 		# Tokenize
@@ -404,9 +405,9 @@ def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
 def split_data_based_on_subtasks(data, subtasks):
 	# We will split the data into data_instances based on subtask_labels
 	subtasks_data = {subtask: list() for subtask in subtasks}
-	for text, cake_id, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in data:
+	for text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in data:
 		for subtask in subtasks:
-			subtasks_data[subtask].append((text, cake_id, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict[subtask][0], subtask_labels_dict[subtask][1]))
+			subtasks_data[subtask].append((text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict[subtask][0], subtask_labels_dict[subtask][1]))
 	return subtasks_data
 
 def log_multitask_data_statistics(data, subtasks):
