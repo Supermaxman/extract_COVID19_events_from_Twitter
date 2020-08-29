@@ -52,7 +52,7 @@ def read_json_line(path):
 			if line:
 				try:
 					output.append(json.loads(line))
-				except:
+				except json.decoder.JSONDecodeError:
 					print(f'Skipped line: {line}')
 
 	return output
