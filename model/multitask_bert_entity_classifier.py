@@ -101,14 +101,14 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self.use_cake_embs = config.use_cake_embs
 		if self.use_cake_embs:
 			#TODO clean this up, put in better place
-			name_lookup = {
+			cake_path_lookup = {
 				'can_not_test': 'data/can_not_test_embs.npz',
 				'death': 'data/death_embs.npz',
 				'cure': 'data/cure_and_prevention_embs.npz',
 				'tested_positive': 'data/test_positive_embs.npz',
 				'tested_negative': 'data/test_negative_embs.npz',
 			}
-			self.cake_embs_path = os.path.join('data', name_lookup[self.task])
+			self.cake_embs_path = cake_path_lookup[self.task]
 			embs_dict = np.load(self.cake_embs_path)
 			embs = embs_dict['embs']
 			# TODO use p_embs later on
