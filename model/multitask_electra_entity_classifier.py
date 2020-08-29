@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, AutoConfig
+from transformers import ElectraTokenizer, ElectraConfig
 from transformers import ElectraPreTrainedModel, ElectraModel
 
 from transformers import AdamW, get_linear_schedule_with_warmup
@@ -430,8 +430,8 @@ def main():
 		make_dir_if_not_exists(args.save_directory)
 
 		# Initialize tokenizer and model with pretrained weights
-		tokenizer = AutoTokenizer.from_pretrained(args.pre_model)
-		config = AutoConfig.from_pretrained(args.pre_model)
+		tokenizer = ElectraTokenizer.from_pretrained(args.pre_model)
+		config = ElectraConfig.from_pretrained(args.pre_model)
 		config.subtasks = subtasks_list
 		# print(config)
 		model = MultiTaskElectraForCovidEntityClassification.from_pretrained(args.pre_model, config=config)
@@ -455,7 +455,7 @@ def main():
 		model.config.vocab_size = model.config.vocab_size + len(new_special_tokens_dict["additional_special_tokens"])
 	else:
 		# Load the tokenizer and model from the save_directory
-		tokenizer = AutoTokenizer.from_pretrained(args.save_directory)
+		tokenizer = ElectraTokenizer.from_pretrained(args.save_directory)
 		model = MultiTaskElectraForCovidEntityClassification.from_pretrained(args.save_directory)
 		# print(model.state_dict().keys())
 		# TODO save and load the subtask classifier weights separately
