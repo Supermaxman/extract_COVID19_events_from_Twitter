@@ -39,6 +39,8 @@ parser.add_argument("-o", "--output_dir", help="Path to the output directory whe
 parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the model needs to be retrained or loaded from the existing save_directory", action="store_true")
 parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
 parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
+# bert-base-cased
+parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='/users/max/data/models/bert/biobert_v1.1_pubmed')
 args = parser.parse_args()
 
 import logging
@@ -419,16 +421,16 @@ def main():
 	data, subtasks_list = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics)
 
 	if args.retrain:
-		logging.info("Creating and training the model from 'bert-base-cased' ")
+		logging.info(f"Creating and training the model from '{args.bert_model}' ")
 		# Create the save_directory if not exists
 		make_dir_if_not_exists(args.save_directory)
 
 		# Initialize tokenizer and model with pretrained weights
-		tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
-		config = BertConfig.from_pretrained('bert-base-cased')
+		tokenizer = BertTokenizer.from_pretrained(args.bert_model)
+		config = BertConfig.from_pretrained(args.bert_model)
 		config.subtasks = subtasks_list
 		# print(config)
-		model = MultiTaskBertForCovidEntityClassification.from_pretrained('bert-base-cased', config=config)
+		model = MultiTaskBertForCovidEntityClassification.from_pretrained(args.bert_model, config=config)
 
 		# Add new tokens in tokenizer
 		new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>", "<URL>", "@USER"]}
