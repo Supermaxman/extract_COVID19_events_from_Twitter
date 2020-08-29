@@ -413,7 +413,7 @@ def log_multitask_data_statistics(data, subtasks):
 	logging.info(f"Total instances in the data = {len(data)}")
 	# print positive and negative counts for each subtask
 	# print(len(data[0]))
-	pos_counts = {subtask: sum(subtask_labels_dict[subtask][1] for _,_,_,_,_,_,_,_,_,subtask_labels_dict in data) for subtask in subtasks}
+	pos_counts = {subtask: sum(subtask_labels_dict[subtask][1] for _,_,_,_,_,_,_,_,subtask_labels_dict in data) for subtask in subtasks}
 	# Log for each subtask
 	neg_counts = dict()
 	for subtask in subtasks:
