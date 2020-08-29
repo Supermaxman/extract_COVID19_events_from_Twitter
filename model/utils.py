@@ -89,8 +89,8 @@ def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
 	original_text_list = list()
 	for subtask in subtasks:
 		# get the instances for current subtask and add it to a set
-		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label in task_instances[subtask]:
-			instance = (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk)
+		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label, cake_id in task_instances[subtask]:
+			instance = (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, cake_id)
 			if text not in text_to_subtask_instances:
 				original_text_list.append(text)
 				text_to_subtask_instances[text] = dict()
@@ -123,7 +123,7 @@ def split_multitask_instances_in_train_dev_test(multitask_instances, TRAIN_RATIO
 	original_tweets = dict()
 	original_tweets_list = list()
 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-	for tweet,_,_,_,_,_,_,_ in multitask_instances:
+	for tweet,_,_,_,_,_,_,_,_ in multitask_instances:
 		if tweet not in original_tweets:
 			original_tweets[tweet] = 1
 			original_tweets_list.append(tweet)
