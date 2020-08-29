@@ -236,7 +236,12 @@ class TokenizeCollator():
 			for subtask in self.subtasks:
 				gold_labels[subtask].append(subtask_labels_dict[subtask][1])
 		# Tokenize
-		all_bert_model_inputs_tokenized = self.tokenizer.batch_encode_plus(all_bert_model_input_texts, pad_to_max_length=True, return_tensors="pt")
+		all_bert_model_inputs_tokenized = self.tokenizer.batch_encode_plus(
+			all_bert_model_input_texts,
+			# pad_to_max_length=True,
+			padding=True,
+			return_tensors="pt"
+		)
 		input_ids, token_type_ids, attention_mask = all_bert_model_inputs_tokenized['input_ids'], all_bert_model_inputs_tokenized['token_type_ids'], all_bert_model_inputs_tokenized['attention_mask']
 		# print(input_ids.type())
 		# print(input_ids.size())
