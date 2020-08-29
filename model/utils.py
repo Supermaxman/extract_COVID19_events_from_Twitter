@@ -50,6 +50,8 @@ def read_json_line(path):
 		for line in f:
 			line = line.strip()
 			if line:
+				if len(line) < 5:
+					print(line)
 				output.append(json.loads(line))
 
 	return output
@@ -80,7 +82,7 @@ def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
 		current_question_tag_statistics = tag_statistics[0][subtask]
 		if len(current_question_tag_statistics) > 1 and current_question_tag_statistics[1] >= MIN_POS_SAMPLES_THRESHOLD:
 			subtasks.append(subtask)
-	
+
 	# For each tweet we will first extract all its instances from each task and their corresponding labels
 	text_to_subtask_instances = dict()
 	original_text_list = list()
@@ -276,7 +278,7 @@ def get_raw_scores(data, prediction_scores, positive_only=False):
 				exact_scores += best_exact_score
 				f1_scores += best_f1_score
 				total += 1.0
-			
+
 			# exact_scores += compute_exact(gold_chunk, current_predicted_chunk)
 			# f1_scores += compute_f1(gold_chunk, current_predicted_chunk)
 		elif len(gold_chunks) == 0 and not positive_only:
@@ -296,7 +298,7 @@ def get_raw_scores(data, prediction_scores, positive_only=False):
 				total += 1.0
 			# exact_scores += compute_exact(gold_chunk, current_predicted_chunk)
 			# f1_scores += compute_f1(gold_chunk, current_predicted_chunk)
-		
+
 	# print("AKAJF:LKAJFL:AKDJFALSKJSALKDJ", len(predicted_chunks_for_each_instance))
 	if total == 0:
 		predictions_exact_score = total
@@ -333,7 +335,7 @@ def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
 			current_predicted_chunk_score = prediction_score
 			current_predicted_chunk = chunk
 			predicted_chunks_for_each_instance[original_text] = current_predicted_chunk, current_predicted_chunk_score, predicted_chunks, gold_chunks
-	
+
 	# Take every span that is predicted by the model, and every gold span in the data.
 	# Then, you can easily calculate the number of True Positives, False Positives and False negatives.
 	# True positives are predicted spans that appear in the gold labels.
@@ -366,7 +368,7 @@ def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
 		P = 0.0
 	else:
 		P = TP / (TP + FP)
-	
+
 	if TP + FN == 0:
 		R = 0.0
 	else:
