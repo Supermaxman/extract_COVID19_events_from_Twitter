@@ -5,6 +5,7 @@ from transformers import AdamW, get_linear_schedule_with_warmup
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 import torch
+import numpy as np
 
 RANDOM_SEED = 901
 import random
@@ -46,6 +47,7 @@ parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, defau
 # pre_models/biobert_v1.1_pubmed
 # https://github.com/digitalepidemiologylab/covid-twitter-bert
 parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='pre_models/covid-twitter-bert')
+parser.add_argument("-ck", "--cake_embs", help="Use cake embs", type=bool, default=True)
 args = parser.parse_args()
 
 import logging
@@ -95,6 +97,23 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 	def __init__(self, config):
 		super().__init__(config)
 		self.num_labels = config.num_labels
+		self.task = config.task
+		self.use_cake_embs = config.use_cake_embs
+		if self.use_cake_embs:
+			self.cake_embs_path = os.path.join('data', f'{self.task}_embs.npz')
+			embs_dict = np.load(self.cake_embs_path)
+			embs = embs_dict['embs']
+			# TODO use p_embs later on
+			p_embs = embs_dict['p_embs']
+			num_embs, embs_dim = embs.shape
+			logging.info(f"Loaded cake embeddings: N={num_embs}, d={embs_dim}")
+			self.cake_embs = nn.Embedding(
+				num_embeddings=num_embs,
+				embedding_dim=embs_dim
+			)
+
+			self.cake_embs.weight = nn.Parameter(embs)
+			self.cake_embs.weight.requires_grad = False
 
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -436,8 +455,13 @@ def main():
 		tokenizer = BertTokenizer.from_pretrained(args.bert_model)
 		config = BertConfig.from_pretrained(args.bert_model)
 		config.subtasks = subtasks_list
+		config.task = args.task
+		config.use_cake_embs = args.cake_embs
 		# print(config)
-		model = MultiTaskBertForCovidEntityClassification.from_pretrained(args.bert_model, config=config)
+		model = MultiTaskBertForCovidEntityClassification.from_pretrained(
+			args.bert_model,
+			config=config
+		)
 
 		# Add new tokens in tokenizer
 		new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>", "<URL>", "@USER"]}
