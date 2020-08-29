@@ -137,6 +137,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self,
 		input_ids,
 		entity_start_positions,
+		cake_ids=None,
 		attention_mask=None,
 		token_type_ids=None,
 		position_ids=None,

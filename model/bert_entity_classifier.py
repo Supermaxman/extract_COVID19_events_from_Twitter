@@ -201,6 +201,7 @@ class COVID19TaskDataset(Dataset):
 	def __len__(self):
 		return self.nsamples
 
+
 class TokenizeCollator():
 	def __init__(self, tokenizer, entity_start_token_id):
 		self.tokenizer = tokenizer
@@ -209,8 +210,9 @@ class TokenizeCollator():
 	def __call__(self, batch):
 		all_bert_model_input_texts = list()
 		gold_labels = list()
+		cake_ids = list()
 		# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label in batch:
+		for text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label in batch:
 			if chunk in ["AUTHOR OF THE TWEET", "NEAR AUTHOR OF THE TWEET"]:
 				# First element of the text will be considered as AUTHOR OF THE TWEET or NEAR AUTHOR OF THE TWEET
 				bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> </E>")
@@ -221,6 +223,7 @@ class TokenizeCollator():
 				bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> " + chunk + " </E>")
 			all_bert_model_input_texts.append(bert_model_input_text)
 			gold_labels.append(label)
+			cake_ids.append(cake_id)
 		# Tokenize
 		all_bert_model_inputs_tokenized = self.tokenizer.batch_encode_plus(all_bert_model_input_texts, pad_to_max_length=True, return_tensors="pt")
 		input_ids, token_type_ids, attention_mask = all_bert_model_inputs_tokenized['input_ids'], all_bert_model_inputs_tokenized['token_type_ids'], all_bert_model_inputs_tokenized['attention_mask']
@@ -231,6 +234,7 @@ class TokenizeCollator():
 		entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
 		# Also extract the gold labels
 		labels = torch.LongTensor(gold_labels)
+		cake_ids = torch.LongTensor(cake_ids)
 		# print(len(batch))
 		if entity_start_positions.size(0) == 0:
 			# Send entity_start_positions to [CLS]'s position i.e. 0
@@ -241,7 +245,13 @@ class TokenizeCollator():
 			print("Error Bad batch:")
 			exit()
 		assert input_ids.size(0) == labels.size(0)
-		return {"input_ids": input_ids, "entity_start_positions": entity_start_positions, "gold_labels": labels, "batch_data": batch}
+		return {
+			"input_ids": input_ids,
+			"entity_start_positions": entity_start_positions,
+			"gold_labels": labels,
+			"cake_ids": cake_ids,
+			"batch_data": batch,
+		}
 
 
 """
@@ -312,7 +322,11 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 	with torch.no_grad():
 		for step, batch in enumerate(pbar):
 			# Create testing instance for model
-			input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device)}
+			input_dict = {
+				"input_ids": batch["input_ids"].to(device),
+				"entity_start_positions": batch["entity_start_positions"].to(device),
+				"cake_ids": batch["cake_ids"].to(device),
+			}
 			labels = batch["gold_labels"].cpu().tolist()
 			logits = model(**input_dict)[0]
 
@@ -487,7 +501,12 @@ def main():
 			dev_steps = int(n_steps / dev_log_frequency)
 			for step, batch in enumerate(pbar):
 				# Forward
-				input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device), "labels": batch["gold_labels"].to(device)}
+				input_dict = {
+					"input_ids": batch["input_ids"].to(device),
+					"entity_start_positions": batch["entity_start_positions"].to(device),
+					"labels": batch["gold_labels"].to(device),
+					"cake_ids": batch["cake_ids"].to(device)
+				}
 				input_ids = batch["input_ids"]
 				entity_start_positions = batch["entity_start_positions"]
 				gold_labels = batch["gold_labels"]
