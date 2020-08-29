@@ -40,7 +40,7 @@ parser.add_argument("-t", "--task", help="Event for which we want to train the b
 parser.add_argument("-s", "--save_directory", help="Path to the directory where we will save model and the tokenizer", type=str, required=True)
 parser.add_argument("-o", "--output_dir", help="Path to the output directory where we will save all the model results", type=str, required=True)
 parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the model needs to be retrained or loaded from the existing save_directory", action="store_true")
-parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
+parser.add_argument("-bs", "--batch_size", help="Train batch size for get_multitask_instances_for_valid_tasks model", type=int, default=32)
 parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 # bert-base-cased
 parser.add_argument("-bm", "--pre_model", help="Pretrained model", type=str, default='pre_models/electra_base_discriminator')
