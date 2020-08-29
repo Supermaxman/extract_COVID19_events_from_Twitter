@@ -442,15 +442,15 @@ def main():
 		tokenizer.add_special_tokens(new_special_tokens_dict)
 		
 		# Add the new embeddings in the weights
-		print("Embeddings type:", model.bert.embeddings.word_embeddings.weight.data.type())
-		print("Embeddings shape:", model.bert.embeddings.word_embeddings.weight.data.size())
-		embedding_size = model.bert.embeddings.word_embeddings.weight.size(1)
+		print("Embeddings type:", model.electra.embeddings.word_embeddings.weight.data.type())
+		print("Embeddings shape:", model.electra.embeddings.word_embeddings.weight.data.size())
+		embedding_size = model.electra.embeddings.word_embeddings.weight.size(1)
 		new_embeddings = torch.FloatTensor(len(new_special_tokens_dict["additional_special_tokens"]), embedding_size).uniform_(-0.1, 0.1)
 		# new_embeddings = torch.FloatTensor(2, embedding_size).uniform_(-0.1, 0.1)
 		print("new_embeddings shape:", new_embeddings.size())
-		new_embedding_weight = torch.cat((model.bert.embeddings.word_embeddings.weight.data,new_embeddings), 0)
-		model.bert.embeddings.word_embeddings.weight.data = new_embedding_weight
-		print("Embeddings shape:", model.bert.embeddings.word_embeddings.weight.data.size())
+		new_embedding_weight = torch.cat((model.electra.embeddings.word_embeddings.weight.data,new_embeddings), 0)
+		model.electra.embeddings.word_embeddings.weight.data = new_embedding_weight
+		print("Embeddings shape:", model.electra.embeddings.word_embeddings.weight.data.size())
 		# Update model config vocab size
 		model.config.vocab_size = model.config.vocab_size + len(new_special_tokens_dict["additional_special_tokens"])
 	else:

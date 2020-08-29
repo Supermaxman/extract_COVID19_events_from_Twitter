@@ -44,7 +44,7 @@ parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model
 parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 # bert-base-cased
 # pre_models/biobert_v1.1_pubmed
-#
+# https://github.com/digitalepidemiologylab/covid-twitter-bert
 parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='pre_models/covid-twitter-bert')
 args = parser.parse_args()
 
