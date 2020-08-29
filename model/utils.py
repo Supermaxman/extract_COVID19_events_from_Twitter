@@ -53,7 +53,7 @@ def read_json_line(path):
 				try:
 					output.append(json.loads(line))
 				except:
-					raise ValueError(line)
+					print(f'Skipped line: {line}')
 
 	return output
 
