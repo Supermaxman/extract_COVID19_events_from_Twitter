@@ -208,6 +208,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# DEBUG:
 		print(pooled_output.shape)
 		print(cake_ids.shape)
+		embs = self.cake_embs(cake_ids)
+		print(embs.shape)
 		exit()
 
 		pooled_output = self.dropout(pooled_output)
