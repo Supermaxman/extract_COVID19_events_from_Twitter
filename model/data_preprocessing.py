@@ -373,8 +373,8 @@ def make_instances_from_dataset(dataset, ctxt2id):
 					 tokenized_tweet,
 					 ' '.join(final_tweet_tokens[:chunk_start_id] + [Q_TOKEN] + final_tweet_tokens[chunk_end_id:]),
 					 tagged_chunks,
-					 question_label,
-					 candidate_chunk_cake_id)
+					 candidate_chunk_cake_id,
+					 question_label)
 				)
 				# Update statistics for data analysis
 				# if (tagged_chunks and len(tagged_chunks) == 1 and tagged_chunks[0] == "Not Specified") or question_label == 0:
