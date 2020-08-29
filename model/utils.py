@@ -53,7 +53,7 @@ def read_json_line(path):
 				try:
 					output.append(json.loads(line))
 				except:
-					print([int(x) for x in line])
+					raise ValueError(line)
 
 	return output
 
