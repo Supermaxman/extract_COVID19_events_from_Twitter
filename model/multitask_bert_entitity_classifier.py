@@ -40,7 +40,7 @@ parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the mod
 parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
 parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 # bert-base-cased
-parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='/users/max/data/models/bert/biobert_v1.1_pubmed')
+parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='pre_models/biobert_v1.1_pubmed')
 args = parser.parse_args()
 
 import logging
