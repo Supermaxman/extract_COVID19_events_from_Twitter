@@ -1,4 +1,7 @@
-from transformers import BertTokenizer, BertPreTrainedModel, BertModel, BertConfig, AdamW, get_linear_schedule_with_warmup
+from transformers import AutoTokenizer, AutoConfig
+from transformers import BertPreTrainedModel, RobertaModel
+
+from transformers import AdamW, get_linear_schedule_with_warmup
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 import torch
@@ -40,7 +43,7 @@ parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the mod
 parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
 parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 # bert-base-cased
-parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='pre_models/biobert_v1.1_pubmed')
+parser.add_argument("-bm", "--pre_model", help="Pretrained model", type=str, default='pre_models/bertweet_base')
 args = parser.parse_args()
 
 import logging
@@ -85,12 +88,13 @@ def format_time(elapsed):
 	# Format as hh:mm:ss
 	return str(datetime.timedelta(seconds=elapsed_rounded))
 
-class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
+
+class MultiTaskElectraForCovidEntityClassification(BertPreTrainedModel):
 	def __init__(self, config):
 		super().__init__(config)
 		self.num_labels = config.num_labels
 
-		self.bert = BertModel(config)
+		self.roberta = RobertaModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
 		self.subtasks = config.subtasks
@@ -152,7 +156,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		"""
 
-		outputs = self.bert(
+		outputs = self.roberta(
 			input_ids,
 			attention_mask=attention_mask,
 			token_type_ids=token_type_ids,
@@ -421,16 +425,16 @@ def main():
 	data, subtasks_list = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics)
 
 	if args.retrain:
-		logging.info(f"Creating and training the model from '{args.bert_model}' ")
+		logging.info(f"Creating and training the model from '{args.pre_model}' ")
 		# Create the save_directory if not exists
 		make_dir_if_not_exists(args.save_directory)
 
 		# Initialize tokenizer and model with pretrained weights
-		tokenizer = BertTokenizer.from_pretrained(args.bert_model)
-		config = BertConfig.from_pretrained(args.bert_model)
+		tokenizer = AutoTokenizer.from_pretrained(args.pre_model)
+		config = AutoConfig.from_pretrained(args.pre_model)
 		config.subtasks = subtasks_list
 		# print(config)
-		model = MultiTaskBertForCovidEntityClassification.from_pretrained(args.bert_model, config=config)
+		model = MultiTaskElectraForCovidEntityClassification.from_pretrained(args.pre_model, config=config)
 
 		# Add new tokens in tokenizer
 		new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>", "<URL>", "@USER"]}
@@ -451,8 +455,8 @@ def main():
 		model.config.vocab_size = model.config.vocab_size + len(new_special_tokens_dict["additional_special_tokens"])
 	else:
 		# Load the tokenizer and model from the save_directory
-		tokenizer = BertTokenizer.from_pretrained(args.save_directory)
-		model = MultiTaskBertForCovidEntityClassification.from_pretrained(args.save_directory)
+		tokenizer = AutoTokenizer.from_pretrained(args.save_directory)
+		model = MultiTaskElectraForCovidEntityClassification.from_pretrained(args.save_directory)
 		# print(model.state_dict().keys())
 		# TODO save and load the subtask classifier weights separately
 		# Load from individual state dicts
