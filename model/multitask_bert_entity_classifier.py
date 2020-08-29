@@ -256,6 +256,7 @@ class TokenizeCollator():
 	def __call__(self, batch):
 		all_bert_model_input_texts = list()
 		gold_labels = {subtask: list() for subtask in self.subtasks}
+		cake_ids = list()
 		# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
 		for text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:
 			tokenized_tweet_with_masked_chunk = self.fix_user_mentions_in_tokenized_tweet(tokenized_tweet_with_masked_chunk)
@@ -272,6 +273,7 @@ class TokenizeCollator():
 
 			for subtask in self.subtasks:
 				gold_labels[subtask].append(subtask_labels_dict[subtask][1])
+			cake_ids.append(cake_id)
 		# Tokenize
 		all_bert_model_inputs_tokenized = self.tokenizer.batch_encode_plus(
 			all_bert_model_input_texts,
@@ -288,6 +290,7 @@ class TokenizeCollator():
 		# Also extract the gold labels
 		labels = {subtask: torch.LongTensor(subtask_gold_labels) for subtask, subtask_gold_labels in gold_labels.items()}
 		# print(len(batch))
+		cake_ids = torch.LongTensor(cake_ids)
 		if entity_start_positions.size(0) == 0:
 			# Send entity_start_positions to [CLS]'s position i.e. 0
 			entity_start_positions = torch.zeros(input_ids.size(0), 2).long()
@@ -303,7 +306,13 @@ class TokenizeCollator():
 				logging.error(f"{subtask}, {labels[subtask]}, {labels[subtask].size(0)}")
 				exit()
 		# assert input_ids.size(0) == labels.size(0)
-		return {"input_ids": input_ids, "entity_start_positions": entity_start_positions, "gold_labels": labels, "batch_data": batch}
+		return {
+			"input_ids": input_ids,
+			"entity_start_positions": entity_start_positions,
+			"gold_labels": labels,
+			"batch_data": batch,
+			"cake_ids": cake_ids
+		}
 
 
 """
@@ -375,7 +384,11 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 	with torch.no_grad():
 		for step, batch in enumerate(pbar):
 			# Create testing instance for model
-			input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device)}
+			input_dict = {
+				"input_ids": batch["input_ids"].to(device),
+				"entity_start_positions": batch["entity_start_positions"].to(device),
+				"cake_ids": batch["cake_ids"].to(device)
+			}
 			labels = batch["gold_labels"]
 			logits = model(**input_dict)[0]
 
@@ -607,7 +620,12 @@ def main():
 					batch["gold_labels"][subtask] = subtask_labels
 					# print("HAHAHAHAH:", batch["gold_labels"][subtask].is_cuda)
 				# Forward
-				input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device), "labels": batch["gold_labels"]}
+				input_dict = {
+					"input_ids": batch["input_ids"].to(device),
+					"entity_start_positions": batch["entity_start_positions"].to(device),
+					"labels": batch["gold_labels"],
+					"cake_ids": batch["cake_ids"].to(device)
+				}
 
 				input_ids = batch["input_ids"]
 				entity_start_positions = batch["entity_start_positions"]
