@@ -229,7 +229,7 @@ class TokenizeCollator():
 		all_bert_model_input_texts = list()
 		gold_labels = {subtask: list() for subtask in self.subtasks}
 		# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:
+		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict, cake_id in batch:
 			tokenized_tweet_with_masked_chunk = self.fix_user_mentions_in_tokenized_tweet(tokenized_tweet_with_masked_chunk)
 			if chunk in ["AUTHOR OF THE TWEET", "NEAR AUTHOR OF THE TWEET"]:
 				# First element of the text will be considered as AUTHOR OF THE TWEET or NEAR AUTHOR OF THE TWEET
@@ -404,16 +404,16 @@ def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
 def split_data_based_on_subtasks(data, subtasks):
 	# We will split the data into data_instances based on subtask_labels
 	subtasks_data = {subtask: list() for subtask in subtasks}
-	for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in data:
+	for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict, cake_id in data:
 		for subtask in subtasks:
-			subtasks_data[subtask].append((text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict[subtask][0], subtask_labels_dict[subtask][1]))
+			subtasks_data[subtask].append((text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict[subtask][0], subtask_labels_dict[subtask][1], cake_id))
 	return subtasks_data
 
 def log_multitask_data_statistics(data, subtasks):
 	logging.info(f"Total instances in the data = {len(data)}")
 	# print positive and negative counts for each subtask
 	# print(len(data[0]))
-	pos_counts = {subtask: sum(subtask_labels_dict[subtask][1] for _,_,_,_,_,_,_,subtask_labels_dict in data) for subtask in subtasks}
+	pos_counts = {subtask: sum(subtask_labels_dict[subtask][1] for _,_,_,_,_,_,_,subtask_labels_dict,_ in data) for subtask in subtasks}
 	# Log for each subtask
 	neg_counts = dict()
 	for subtask in subtasks:
