@@ -48,7 +48,9 @@ def read_json_line(path):
 	output = []
 	with open(path, 'r') as f:
 		for line in f:
-			output.append(json.loads(line))
+			line = line.strip()
+			if line:
+				output.append(json.loads(line))
 
 	return output
 
