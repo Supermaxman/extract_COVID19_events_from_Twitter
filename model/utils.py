@@ -50,9 +50,10 @@ def read_json_line(path):
 		for line in f:
 			line = line.strip()
 			if line:
-				if len(line) < 5:
+				try:
+					output.append(json.loads(line))
+				except:
 					print(line)
-				output.append(json.loads(line))
 
 	return output
 
