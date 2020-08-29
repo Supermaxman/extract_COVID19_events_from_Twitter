@@ -23,4 +23,4 @@ for task, (input_path, output_path) in task_type_to_datapath_dict.items():
       ctxt2id[c_txt] = len(ctxt2id)
       cid2id[cid] = ctxt2id[c_txt]
   with open(output_path, 'w') as f:
-    json.dump(ctxt2id, output_path)
+    json.dump(ctxt2id, f)
