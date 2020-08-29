@@ -206,8 +206,9 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		pooled_output = outputs[0][entity_start_positions[:, 0], entity_start_positions[:, 1], :]
 		
 		# DEBUG:
-		# print(pooled_output.shape)
-		# exit()
+		print(pooled_output.shape)
+		print(cake_ids.shape)
+		exit()
 
 		pooled_output = self.dropout(pooled_output)
 		# Get logits for each subtask
