@@ -367,6 +367,7 @@ def make_instances_from_dataset(dataset, ctxt2id):
 				# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
 				task_instances_dict[question_tag].append(
 					(text,
+					 candidate_chunk_cake_id,
 					 candidate_chunk,
 					 candidate_chunk_id,
 					 chunk_start_text_id,
@@ -374,7 +375,6 @@ def make_instances_from_dataset(dataset, ctxt2id):
 					 tokenized_tweet,
 					 ' '.join(final_tweet_tokens[:chunk_start_id] + [Q_TOKEN] + final_tweet_tokens[chunk_end_id:]),
 					 tagged_chunks,
-					 candidate_chunk_cake_id,
 					 question_label)
 				)
 				# Update statistics for data analysis
