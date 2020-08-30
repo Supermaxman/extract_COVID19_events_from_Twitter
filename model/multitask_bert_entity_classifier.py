@@ -47,7 +47,7 @@ parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, defau
 # pre_models/biobert_v1.1_pubmed
 # https://github.com/digitalepidemiologylab/covid-twitter-bert
 parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='pre_models/covid-twitter-bert')
-parser.add_argument("-ck", "--cake_embs", help="Use cake embs", type=bool, default=True)
+parser.add_argument("-ck", "--cake_embs", help="Use cake embs", type=bool, default=False)
 args = parser.parse_args()
 
 import logging
