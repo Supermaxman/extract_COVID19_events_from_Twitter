@@ -311,7 +311,7 @@ def get_raw_scores(data, prediction_scores, positive_only=False):
 
 def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
 	predicted_chunks_for_each_instance = dict()
-	for (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
+	for (text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
 		original_text = text
 		# print(text)
 		# print(chunk)
