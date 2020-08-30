@@ -206,14 +206,15 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# NOTE: outputs[0] has all the hidden dimensions for the entire sequence
 		# We will extract the embeddings indexed with entity_start_positions
 		pooled_output = outputs[0][entity_start_positions[:, 0], entity_start_positions[:, 1], :]
-		
-		# DEBUG:
-		# print(pooled_output.shape)
-		# print(cake_ids.shape)
-		embs = self.cake_embs(cake_ids)
-		# print(embs.shape)
-		pooled_output = torch.cat((pooled_output, embs), 1)
-		# print(pooled_output.shape)
+
+		if self.use_cake_embs:
+			# DEBUG:
+			# print(pooled_output.shape)
+			# print(cake_ids.shape)
+			embs = self.cake_embs(cake_ids)
+			# print(embs.shape)
+			pooled_output = torch.cat((pooled_output, embs), 1)
+			# print(pooled_output.shape)
 
 		pooled_output = self.dropout(pooled_output)
 		# Get logits for each subtask
