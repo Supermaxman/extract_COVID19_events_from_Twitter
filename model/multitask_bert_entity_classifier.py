@@ -99,6 +99,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self.num_labels = config.num_labels
 		self.task = config.task
 		self.use_cake_embs = config.use_cake_embs
+		extra_size = 0
 		if self.use_cake_embs:
 			#TODO clean this up, put in better place
 			cake_path_lookup = {
@@ -119,6 +120,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 				num_embeddings=num_embs,
 				embedding_dim=embs_dim
 			)
+			extra_size += embs_dim
 
 			self.cake_embs.weight = nn.Parameter(torch.from_numpy(embs).float())
 			self.cake_embs.weight.requires_grad = False
@@ -128,7 +130,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		self.subtasks = config.subtasks
 		# We will create a dictionary of classifiers based on the number of subtasks
-		self.classifiers = {subtask: nn.Linear(config.hidden_size, config.num_labels) for subtask in self.subtasks}
+		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
 		# self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
 		self.init_weights()
