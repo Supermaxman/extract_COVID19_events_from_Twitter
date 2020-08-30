@@ -122,9 +122,6 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 			)
 			extra_size += embs_dim
 
-			self.cake_embs.weight = nn.Parameter(torch.from_numpy(embs).float())
-			self.cake_embs.weight.requires_grad = False
-
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
@@ -134,6 +131,11 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
 		self.init_weights()
+
+		if self.use_cake_embs:
+			self.cake_embs.weight = nn.Parameter(torch.from_numpy(embs).float())
+			self.cake_embs.weight.requires_grad = False
+
 
 	def forward(
 		self,
@@ -209,12 +211,13 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		if self.use_cake_embs:
 			# DEBUG:
-			# print(pooled_output.shape)
-			# print(cake_ids.shape)
+			print(pooled_output.shape)
+			print(cake_ids.shape)
 			embs = self.cake_embs(cake_ids)
-			# print(embs.shape)
+			print(embs.shape)
 			pooled_output = torch.cat((pooled_output, embs), 1)
-			# print(pooled_output.shape)
+			print(pooled_output.shape)
+			print(cake_ids)
 
 		pooled_output = self.dropout(pooled_output)
 		# Get logits for each subtask
