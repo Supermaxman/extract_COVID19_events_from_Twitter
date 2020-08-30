@@ -47,7 +47,7 @@ parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, defau
 # pre_models/biobert_v1.1_pubmed
 # https://github.com/digitalepidemiologylab/covid-twitter-bert
 parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='pre_models/covid-twitter-bert')
-parser.add_argument("-ck", "--cake_embs", help="Use cake embs", type=bool, default=False)
+parser.add_argument("-ck", "--use_cake_embs", help="Use cake embs", type=bool, default=True)
 args = parser.parse_args()
 
 import logging
@@ -488,7 +488,7 @@ def main():
 		config = BertConfig.from_pretrained(args.bert_model)
 		config.subtasks = subtasks_list
 		config.task = args.task
-		config.use_cake_embs = args.cake_embs
+		config.use_cake_embs = args.use_cake_embs
 		# print(config)
 		model = MultiTaskBertForCovidEntityClassification.from_pretrained(
 			args.bert_model,
