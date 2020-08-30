@@ -234,7 +234,7 @@ def compute_f1(a_gold, a_pred):
 def get_raw_scores(data, prediction_scores, positive_only=False):
 	predicted_chunks_for_each_instance = dict()
 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-	for (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
+	for (text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
 		original_text = text
 		# print(text)
 		# print(chunk)
