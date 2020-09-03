@@ -30,6 +30,7 @@ RETRAIN_FLAG = True
 # REDO_FLAG = False
 pre_model_name = 'bert'
 run_name = 'pool'
+gpu_id = 4
 
 # We will save all the tasks and subtask's results and model configs in this dictionary
 all_task_results_and_model_configs = dict()
@@ -57,7 +58,7 @@ for taskname, (data_in_file, processed_out_file) in task_type_to_datapath_dict.i
 	if not os.path.exists(results_file) or REDO_FLAG:
 		# Execute the Bert entity classifier train and test only if the results file doesn't exists
 		# After fixing the USER and URL tags
-		multitask_bert_cmd = f"python model/multitask_{pre_model_name}_entity_classifier.py -d {processed_out_file} -t {taskname} -o {output_dir} -s saved_models/multitask_{pre_model_name}_{run_name}_entity_classifier_fixed/{taskname}_8_epoch_32_batch_multitask_bert_model"
+		multitask_bert_cmd = f"CUDA_VISIBLE_DEVICES={gpu_id} python model/multitask_{pre_model_name}_entity_classifier.py -d {processed_out_file} -t {taskname} -o {output_dir} -s saved_models/multitask_{pre_model_name}_{run_name}_entity_classifier_fixed/{taskname}_8_epoch_32_batch_multitask_bert_model"
 		if RETRAIN_FLAG:
 			multitask_bert_cmd += " -r"
 		logging.info(f"Running: {multitask_bert_cmd}")
