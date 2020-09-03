@@ -6,6 +6,9 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 import torch
 from data_utils import COVID19TaskDataset, TokenizeCollator
+
+from .hopfield import HopfieldPooling
+
 import numpy as np
 
 RANDOM_SEED = 901
@@ -95,11 +98,28 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# 	num_embeddings=100,
 		# 	embedding_dim=25
 		# )
-		# extra_size += 25
 		self.subtasks = config.subtasks
+
+		self.poolers = {
+			subtask: HopfieldPooling(
+				input_size=config.hidden_size
+			)
+			for subtask in self.subtasks
+		}
+
+		self.positional_embeddings = {
+			subtask: nn.Embedding(
+				num_embeddings=100,
+				embedding_dim=25
+			)
+			for subtask in self.subtasks
+		}
+		extra_size += 25
+
 		# We will create a dictionary of classifiers based on the number of subtasks
-		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
-		# self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+		self.classifiers = {
+			subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks
+		}
 
 		self.init_weights()
 
@@ -138,7 +158,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		contextualized_embeddings = outputs[0]
 
 		# [bsize, emb_size]
-		pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
+		# pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
 
 		# [bsize, seq_len, emb_size]
 		# contextualized_embeddings
@@ -149,7 +169,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
 
 		# [bsize, emb_size]
-		pooled_output = self.dropout(pooled_output)
+		# pooled_output = self.dropout(pooled_output)
 
 		# [bsize, p_emb_size]
 		# pos_embeddings = self.positional_embeddings(entity_span_widths)
@@ -159,6 +179,12 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# Get logits for each subtask
 		logits = {}
 		for subtask in self.subtasks:
+			pooled_output = self.poolers[subtask](
+				input=contextualized_embeddings,
+				association_mask=entity_span_masks
+			)
+			pos_embeddings = self.positional_embeddings[subtask](entity_span_widths)
+			pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
 			classifier_out = self.classifiers[subtask](pooled_output)
 			logits[subtask] = classifier_out
 
