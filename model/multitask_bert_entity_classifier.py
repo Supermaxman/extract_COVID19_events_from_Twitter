@@ -182,7 +182,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		for subtask in self.subtasks:
 			pooled_output = self.poolers[subtask](
 				input=contextualized_embeddings,
-				association_mask=entity_span_masks
+				stored_pattern_padding_mask=entity_span_masks
 			)
 			pos_embeddings = self.positional_embeddings[subtask](entity_span_widths)
 			pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
