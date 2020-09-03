@@ -7,6 +7,7 @@ import collections
 import json
 import pickle
 
+import datetime
 
 import logging
 logging.basicConfig()
@@ -16,27 +17,33 @@ MIN_POS_SAMPLES_THRESHOLD = 10
 Q_TOKEN = "<Q_TARGET>"
 URL_TOKEN = "<URL>"
 
+
 def print_list(l):
 	for e in l:
 		print(e)
 	print()
+
 
 def log_list(l):
 	for e in l:
 		logging.info(e)
 	logging.info("")
 
+
 def save_in_pickle(save_object, save_file):
 	with open(save_file, "wb") as pickle_out:
 		pickle.dump(save_object, pickle_out)
+
 
 def load_from_pickle(pickle_file):
 	with open(pickle_file, "rb") as pickle_in:
 		return pickle.load(pickle_in)
 
+
 def save_in_json(save_dict, save_file):
 	with open(save_file, 'w') as fp:
 		json.dump(save_dict, fp)
+
 
 def load_from_json(json_file):
 	with open(json_file, 'r') as fp:
@@ -72,8 +79,10 @@ def make_dir_if_not_exists(directory):
 		logging.info("Creating new directory: {}".format(directory))
 		os.makedirs(directory)
 
+
 def extract_instances_for_current_subtask(task_instances, sub_task):
 	return task_instances[sub_task]
+
 
 def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
 	# Extract instances and labels from all the sub-task
@@ -118,6 +127,7 @@ def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
 			all_multitask_instances.append((*instance, subtasks_labels_dict))
 	return all_multitask_instances, subtasks
 
+
 def split_multitask_instances_in_train_dev_test(multitask_instances, TRAIN_RATIO = 0.6, DEV_RATIO = 0.15):
 	# Group the multitask_instances by original tweet
 	original_tweets = dict()
@@ -152,6 +162,7 @@ def split_multitask_instances_in_train_dev_test(multitask_instances, TRAIN_RATIO
 	# print(f"Train:{len(train_tweets)}\t Dev:{len(dev_tweets)}\t Test:{len(test_tweets)}")
 	# print(f"Train:{len(segment_multitask_instances['train'])}\t Dev:{len(segment_multitask_instances['dev'])}\t Test:{len(segment_multitask_instances['test'])}")
 	return segment_multitask_instances['train'], segment_multitask_instances['dev'], segment_multitask_instances['test']
+
 
 def split_instances_in_train_dev_test(instances, TRAIN_RATIO = 0.6, DEV_RATIO = 0.15):
 	# Group the instances by original tweet
@@ -188,11 +199,13 @@ def split_instances_in_train_dev_test(instances, TRAIN_RATIO = 0.6, DEV_RATIO = 
 	# print(f"Train:{len(segment_instances['train'])}\t Dev:{len(segment_instances['dev'])}\t Test:{len(segment_instances['test'])}")
 	return segment_instances['train'], segment_instances['dev'], segment_instances['test']
 
+
 def log_data_statistics(data):
 	logging.info(f"Total instances in the data = {len(data)}")
 	pos_count = sum(label for _,_,_,_,_,_,_,_,label in data)
 	logging.info(f"Positive labels = {pos_count} Negative labels = {len(data) - pos_count}")
 	return len(data), pos_count, (len(data) - pos_count)
+
 
 # SQuAD F-1 evaluation
 def normalize_answer(s):
@@ -200,21 +213,27 @@ def normalize_answer(s):
 	def remove_articles(text):
 		regex = re.compile(r'\b(a|an|the)\b', re.UNICODE)
 		return re.sub(regex, ' ', text)
+
 	def white_space_fix(text):
 		return ' '.join(text.split())
+
 	def remove_punc(text):
 		exclude = set(string.punctuation)
 		return ''.join(ch for ch in text if ch not in exclude)
+
 	def lower(text):
 		return text.lower()
 	return white_space_fix(remove_articles(remove_punc(lower(s))))
+
 
 def get_tokens(s):
 	if not s: return []
 	return normalize_answer(s).split()
 
+
 def compute_exact(a_gold, a_pred):
 	return int(normalize_answer(a_gold) == normalize_answer(a_pred))
+
 
 def compute_f1(a_gold, a_pred):
 	gold_toks = get_tokens(a_gold)
@@ -230,6 +249,7 @@ def compute_f1(a_gold, a_pred):
 	recall = 1.0 * num_same / len(gold_toks)
 	f1 = (2 * precision * recall) / (precision + recall)
 	return f1
+
 
 def get_raw_scores(data, prediction_scores, positive_only=False):
 	predicted_chunks_for_each_instance = dict()
@@ -308,6 +328,18 @@ def get_raw_scores(data, prediction_scores, positive_only=False):
 		predictions_exact_score = exact_scores * 100.0 / total
 		predictions_f1_score = f1_scores * 100.0 / total
 	return predictions_exact_score, predictions_f1_score, total
+
+
+def format_time(elapsed):
+	'''
+	Takes a time in seconds and returns a string hh:mm:ss
+	'''
+	# Round to the nearest second.
+	elapsed_rounded = int(round((elapsed)))
+
+	# Format as hh:mm:ss
+	return str(datetime.timedelta(seconds=elapsed_rounded))
+
 
 def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
 	predicted_chunks_for_each_instance = dict()
