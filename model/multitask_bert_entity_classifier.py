@@ -112,11 +112,11 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-		self.positional_embeddings = nn.Embedding(
-			num_embeddings=100,
-			embedding_dim=25
-		)
-		extra_size += 25
+		# self.positional_embeddings = nn.Embedding(
+		# 	num_embeddings=100,
+		# 	embedding_dim=25
+		# )
+		# extra_size += 25
 		self.subtasks = config.subtasks
 		# We will create a dictionary of classifiers based on the number of subtasks
 		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
