@@ -127,6 +127,9 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self,
 		input_ids,
 		entity_start_positions,
+		entity_end_positions,
+		entity_span_widths,
+		entity_span_masks,
 		cake_ids=None,
 		attention_mask=None,
 		token_type_ids=None,
@@ -154,7 +157,17 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# NOTE: outputs[0] has all the hidden dimensions for the entire sequence
 		# We will extract the embeddings indexed with entity_start_positions
 		contextualized_embeddings = outputs[0]
-		pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
+
+		# [bsize, emb_size]
+		# pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
+
+		# [bsize, seq_len, emb_size]
+		# contextualized_embeddings
+		# [bsize, seq_len]
+		# entity_span_masks
+
+		# [bsize, emb_size]
+		pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)
 
 		if self.use_cake_embs:
 			# DEBUG:
@@ -210,6 +223,9 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 			input_dict = {
 				"input_ids": batch["input_ids"].to(device),
 				"entity_start_positions": batch["entity_start_positions"].to(device),
+				"entity_end_positions": batch["entity_end_positions"].to(device),
+				"entity_span_widths": batch["entity_span_widths"].to(device),
+				"entity_span_masks": batch["entity_span_masks"].to(device),
 				"cake_ids": batch["cake_ids"].to(device)
 			}
 			labels = batch["gold_labels"]
@@ -449,14 +465,13 @@ def main():
 				input_dict = {
 					"input_ids": batch["input_ids"].to(device),
 					"entity_start_positions": batch["entity_start_positions"].to(device),
+					"entity_end_positions": batch["entity_end_positions"].to(device),
+					"entity_span_widths": batch["entity_span_widths"].to(device),
+					"entity_span_masks": batch["entity_span_masks"].to(device),
 					"labels": batch["gold_labels"],
 					"cake_ids": batch["cake_ids"].to(device)
 				}
 
-				input_ids = batch["input_ids"]
-				entity_start_positions = batch["entity_start_positions"]
-				gold_labels = batch["gold_labels"]
-				batch_data = batch["batch_data"]
 				loss, logits = model(**input_dict)
 				# loss = loss / accumulation_steps
 				# Accumulate loss
