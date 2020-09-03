@@ -72,6 +72,7 @@ class TokenizeCollator():
 		entity_end_positions = (input_ids == self.entity_end_token_id).nonzero()
 		# width of span within <E> ... </E>
 		entity_span_widths = entity_end_positions[:, 1] - entity_start_positions[:, 1] - 1
+		entity_span_widths = torch.clamp(entity_span_widths, 0, 100)
 		# mask over <E> ... </E>
 		entity_span_masks = create_mask(entity_start_positions, entity_end_positions+1, input_ids.shape[1])
 		# Also extract the gold labels
