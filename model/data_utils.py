@@ -25,10 +25,11 @@ class COVID19TaskDataset(Dataset):
 
 
 class TokenizeCollator():
-	def __init__(self, tokenizer, subtasks, entity_start_token_id):
+	def __init__(self, tokenizer, subtasks, entity_start_token_id, entity_end_token_id):
 		self.tokenizer = tokenizer
 		self.subtasks = subtasks
 		self.entity_start_token_id = entity_start_token_id
+		self.entity_end_token_id = entity_end_token_id
 
 	def fix_user_mentions_in_tokenized_tweet(self, tokenized_tweet):
 		return ' '.join(["@USER" if word.startswith("@") else word for word in tokenized_tweet.split()])
@@ -62,12 +63,19 @@ class TokenizeCollator():
 			return_tensors="pt"
 		)
 		input_ids, token_type_ids, attention_mask = all_bert_model_inputs_tokenized['input_ids'], all_bert_model_inputs_tokenized['token_type_ids'], all_bert_model_inputs_tokenized['attention_mask']
-		# print(input_ids.type())
-		# print(input_ids.size())
-		# print(input_ids)
+
 		# First extract the indices of <E> token in each sentence and save it in the batch
 		# TODO try better fusion function like max pooling over span
 		entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
+		print(entity_start_positions)
+		print(entity_start_positions.shape)
+		entity_end_positions = (input_ids == self.entity_end_token_id).nonzero()
+		print(entity_end_positions)
+		print(entity_end_positions.shape)
+		entity_span_widths = entity_end_positions - entity_start_positions - 1
+		print(entity_span_widths)
+		print(entity_span_widths.shape)
+		exit()
 		# Also extract the gold labels
 		labels = {subtask: torch.LongTensor(subtask_gold_labels) for subtask, subtask_gold_labels in gold_labels.items()}
 		# print(len(batch))
@@ -75,6 +83,10 @@ class TokenizeCollator():
 		if entity_start_positions.size(0) == 0:
 			# Send entity_start_positions to [CLS]'s position i.e. 0
 			entity_start_positions = torch.zeros(input_ids.size(0), 2).long()
+
+		if entity_end_positions.size(0) == 0:
+			entity_end_positions = torch.zeros(input_ids.size(0), 2).long()
+
 		# print(entity_start_positions)
 		# print(input_ids.size(), labels.size())
 
@@ -90,8 +102,12 @@ class TokenizeCollator():
 		return {
 			"input_ids": input_ids,
 			"entity_start_positions": entity_start_positions,
+			"entity_end_positions": entity_end_positions,
+			"entity_span_widths": entity_span_widths,
 			"gold_labels": labels,
 			"batch_data": batch,
 			"cake_ids": cake_ids
 		}
 
+
+def create_mask(start_indices, end_indices, seq_len):

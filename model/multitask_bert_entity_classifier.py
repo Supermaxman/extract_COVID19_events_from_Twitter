@@ -345,7 +345,8 @@ def main():
 	for subtask, classifier in model.classifiers.items():
 		classifier.to(device)
 	entity_start_token_id = tokenizer.convert_tokens_to_ids(["<E>"])[0]
-	
+	entity_end_token_id = tokenizer.convert_tokens_to_ids(["</E>"])[0]
+
 	logging.info(f"Task dataset for task: {args.task} loaded from {args.data_file}.")
 	
 	model_config = dict()
@@ -375,7 +376,7 @@ def main():
 	test_dataset = COVID19TaskDataset(test_data)
 	logging.info("Loaded the datasets into Pytorch datasets")
 
-	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id)
+	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id)
 	train_dataloader = DataLoader(train_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=True, num_workers=0, collate_fn=tokenize_collator)
 	dev_dataloader = DataLoader(dev_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
 	test_dataloader = DataLoader(test_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)

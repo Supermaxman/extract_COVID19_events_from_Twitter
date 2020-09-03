@@ -29,6 +29,7 @@ REDO_FLAG = True
 RETRAIN_FLAG = True
 # REDO_FLAG = False
 pre_model_name = 'bert'
+run_name = 'pool'
 
 # We will save all the tasks and subtask's results and model configs in this dictionary
 all_task_results_and_model_configs = dict()
@@ -49,14 +50,14 @@ for taskname, (data_in_file, processed_out_file) in task_type_to_datapath_dict.i
 	tested_tasks = list()
 	logging.info(f"Training Mutlitask BERT Entity Classifier model on {processed_out_file}")
 	# NOTE: After fixing the USER and URL tags
-	output_dir = os.path.join("results", f"multitask_{pre_model_name}_entity_classifier_fixed", taskname)
+	output_dir = os.path.join("results", f"multitask_{pre_model_name}_{run_name}_entity_classifier_fixed", taskname)
 	make_dir_if_not_exists(output_dir)
 	results_file = os.path.join(output_dir, "results.json")
 	model_config_file = os.path.join(output_dir, "model_config.json")
 	if not os.path.exists(results_file) or REDO_FLAG:
 		# Execute the Bert entity classifier train and test only if the results file doesn't exists
 		# After fixing the USER and URL tags
-		multitask_bert_cmd = f"python model/multitask_{pre_model_name}_entity_classifier.py -d {processed_out_file} -t {taskname} -o {output_dir} -s saved_models/multitask_{pre_model_name}_entity_classifier_fixed/{taskname}_8_epoch_32_batch_multitask_bert_model"
+		multitask_bert_cmd = f"python model/multitask_{pre_model_name}_entity_classifier.py -d {processed_out_file} -t {taskname} -o {output_dir} -s saved_models/multitask_{pre_model_name}_{run_name}_entity_classifier_fixed/{taskname}_8_epoch_32_batch_multitask_bert_model"
 		if RETRAIN_FLAG:
 			multitask_bert_cmd += " -r"
 		logging.info(f"Running: {multitask_bert_cmd}")
@@ -82,7 +83,7 @@ for taskname, (data_in_file, processed_out_file) in task_type_to_datapath_dict.i
 
 # Read the results for each task and save them in csv file
 # NOTE: After fixing the USER and URL tags
-results_tsv_save_file = os.path.join("results", f"all_experiments_multitask_{pre_model_name}_entity_classifier_fixed_results.tsv")
+results_tsv_save_file = os.path.join("results", f"all_experiments_multitask_{pre_model_name}_{run_name}_entity_classifier_fixed_results.tsv")
 with open(results_tsv_save_file, "w") as tsv_out:
 	writer = csv.writer(tsv_out, delimiter='\t')
 	header = ["Event", "Sub-task", "Train Data (size, pos., neg.)", "Dev Data (size, pos., neg.)", "Test Data (size, pos., neg.)", "model name", "accuracy", "CM", "pos. F1", "SQuAD_total", "SQuAD_EM", "SQuAD_F1", "SQuAD_Pos. EM_F1_total", "SQuAD_Pos. EM", "SQuAD_Pos. F1", "dev_threshold", "dev_N", "dev_F1", "dev_P", "dev_R", "dev_TP", "dev_FP", "dev_FN", "N", "F1", "P", "R", "TP", "FP", "FN"]
