@@ -68,18 +68,12 @@ class TokenizeCollator():
 		# TODO try better fusion function like max pooling over span
 		# [bsize, 2] where [:, 0] is the batch idx and [:, 1] is the position.
 		entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
-		print(entity_start_positions)
-		print(entity_start_positions.shape)
+
 		entity_end_positions = (input_ids == self.entity_end_token_id).nonzero()
-		print(entity_end_positions)
-		print(entity_end_positions.shape)
+		# width of span within <E> ... </E>
 		entity_span_widths = entity_end_positions[:, 1] - entity_start_positions[:, 1] - 1
-		print(entity_span_widths)
-		print(entity_span_widths.shape)
-		entity_mask = create_mask(entity_start_positions, entity_end_positions, input_ids.shape[1])
-		print(entity_mask[0])
-		print(entity_mask.shape)
-		exit()
+		# mask over <E> ... </E>
+		entity_span_masks = create_mask(entity_start_positions, entity_end_positions+1, input_ids.shape[1])
 		# Also extract the gold labels
 		labels = {subtask: torch.LongTensor(subtask_gold_labels) for subtask, subtask_gold_labels in gold_labels.items()}
 		# print(len(batch))
@@ -108,6 +102,7 @@ class TokenizeCollator():
 			"entity_start_positions": entity_start_positions,
 			"entity_end_positions": entity_end_positions,
 			"entity_span_widths": entity_span_widths,
+			"entity_span_masks": entity_span_masks,
 			"gold_labels": labels,
 			"batch_data": batch,
 			"cake_ids": cake_ids
