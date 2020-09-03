@@ -113,7 +113,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
 		self.positional_embeddings = nn.Embedding(
-			num_embeddings=100,
+			num_embeddings=512,
 			embedding_dim=25
 		)
 		extra_size += 25
