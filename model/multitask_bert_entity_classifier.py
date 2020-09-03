@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 from data_utils import COVID19TaskDataset, TokenizeCollator
 
-from .hopfield import HopfieldPooling
+from hopfield import HopfieldPooling
 
 import numpy as np
 
