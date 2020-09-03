@@ -120,6 +120,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self.classifiers = {
 			subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks
 		}
+		self.sub_modules = [self.poolers, self.positional_embeddings, self.classifiers]
 
 		self.init_weights()
 
@@ -361,8 +362,10 @@ def main():
 		# exit()
 	model.to(device)
 	# Explicitly move the classifiers to device
-	for subtask, classifier in model.classifiers.items():
-		classifier.to(device)
+	for sub_module in model.sub_modules:
+		for subtask in model.subtasks:
+			sub_module[subtask].to(device)
+
 	entity_start_token_id = tokenizer.convert_tokens_to_ids(["<E>"])[0]
 	entity_end_token_id = tokenizer.convert_tokens_to_ids(["</E>"])[0]
 
