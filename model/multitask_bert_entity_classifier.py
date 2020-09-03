@@ -112,6 +112,11 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
+		self.positional_embeddings = nn.Embedding(
+			num_embeddings=100,
+			embedding_dim=25
+		)
+		extra_size += 25
 		self.subtasks = config.subtasks
 		# We will create a dictionary of classifiers based on the number of subtasks
 		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
@@ -150,7 +155,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# DEBUG:
 		# print("BERT model outputs shape", outputs[0].shape, outputs[1].shape)
 		# print(entity_start_positions[:, 0], entity_start_positions[:, 1])
-		
+
 		# OLD CODE:
 		# pooled_output = outputs[1]
 
@@ -179,16 +184,25 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 			# print(pooled_output.shape)
 			# print(cake_ids)
 
+		# [bsize, emb_size]
 		pooled_output = self.dropout(pooled_output)
+
+		# [bsize, p_emb_size]
+		pos_embeddings = self.positional_embeddings(entity_span_widths)
+
+		# [bsize, total_emb_size]
+		pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
 		# Get logits for each subtask
-		# logits = self.classifier(pooled_output)
-		logits = {subtask: self.classifiers[subtask](pooled_output) for subtask in self.subtasks}
+		logits = {}
+		for subtask in self.subtasks:
+			classifier_out = self.classifiers[subtask](pooled_output)
+			logits[subtask] = classifier_out
 
 		outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
 
 		if labels is not None:
 			loss_fct = nn.CrossEntropyLoss()
-			
+
 			# DEBUG:
 			# print(f"Logits:{logits.view(-1, self.num_labels)}, \t, Labels:{labels.view(-1)}")
 			for i, subtask in enumerate(self.subtasks):
