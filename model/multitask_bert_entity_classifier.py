@@ -167,7 +167,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# entity_span_masks
 
 		# [bsize, emb_size]
-		pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)
+		pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
 
 		if self.use_cake_embs:
 			# DEBUG:
