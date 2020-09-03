@@ -133,7 +133,7 @@ def split_multitask_instances_in_train_dev_test(multitask_instances, TRAIN_RATIO
 	original_tweets = dict()
 	original_tweets_list = list()
 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-	for tweet,_,_,_,_,_,_,_,_ in multitask_instances:
+	for tweet,_,_,_,_,_,_,_ in multitask_instances:
 		if tweet not in original_tweets:
 			original_tweets[tweet] = 1
 			original_tweets_list.append(tweet)
@@ -169,7 +169,7 @@ def split_instances_in_train_dev_test(instances, TRAIN_RATIO = 0.6, DEV_RATIO = 
 	original_tweets = dict()
 	original_tweets_list = list()
 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-	for tweet,_,_,_,_,_,_,_,_ in instances:
+	for tweet,_,_,_,_,_,_,_ in instances:
 		if tweet not in original_tweets:
 			original_tweets[tweet] = 1
 			original_tweets_list.append(tweet)
