@@ -50,7 +50,7 @@ parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, defau
 # pre_models/biobert_v1.1_pubmed
 # https://github.com/digitalepidemiologylab/covid-twitter-bert
 parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='pre_models/covid-twitter-bert')
-parser.add_argument("-ck", "--use_cake_embs", help="Use cake embs", type=bool, default=False)
+
 args = parser.parse_args()
 
 import logging
@@ -85,29 +85,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		super().__init__(config)
 		self.num_labels = config.num_labels
 		self.task = config.task
-		self.use_cake_embs = config.use_cake_embs
+
 		extra_size = 0
-		if self.use_cake_embs:
-			#TODO clean this up, put in better place
-			cake_path_lookup = {
-				'can_not_test': 'data/can_not_test_embs.npz',
-				'death': 'data/death_embs.npz',
-				'cure': 'data/cure_and_prevention_embs.npz',
-				'tested_positive': 'data/test_positive_embs.npz',
-				'tested_negative': 'data/test_negative_embs.npz',
-			}
-			self.cake_embs_path = cake_path_lookup[self.task]
-			embs_dict = np.load(self.cake_embs_path)
-			embs = embs_dict['embs']
-			# TODO use p_embs later on
-			p_embs = embs_dict['p_embs']
-			num_embs, embs_dim = embs.shape
-			logging.info(f"Loaded cake embeddings: N={num_embs}, d={embs_dim}")
-			self.cake_embs = nn.Embedding(
-				num_embeddings=num_embs,
-				embedding_dim=embs_dim
-			)
-			extra_size += embs_dim
 
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -124,10 +103,6 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		self.init_weights()
 
-		if self.use_cake_embs:
-			self.cake_embs.weight = nn.Parameter(torch.from_numpy(embs).float())
-			self.cake_embs.weight.requires_grad = False
-
 	def forward(
 		self,
 		input_ids,
@@ -135,7 +110,6 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		entity_end_positions,
 		entity_span_widths,
 		entity_span_masks,
-		cake_ids=None,
 		attention_mask=None,
 		token_type_ids=None,
 		position_ids=None,
@@ -173,16 +147,6 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		# [bsize, emb_size]
 		# pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
-
-		if self.use_cake_embs:
-			# DEBUG:
-			# print(pooled_output.shape)
-			# print(cake_ids.shape)
-			embs = self.cake_embs(cake_ids)
-			# print(embs.shape)
-			pooled_output = torch.cat((pooled_output, embs), 1)
-			# print(pooled_output.shape)
-			# print(cake_ids)
 
 		# [bsize, emb_size]
 		pooled_output = self.dropout(pooled_output)
@@ -239,8 +203,7 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 				"entity_start_positions": batch["entity_start_positions"].to(device),
 				"entity_end_positions": batch["entity_end_positions"].to(device),
 				"entity_span_widths": batch["entity_span_widths"].to(device),
-				"entity_span_masks": batch["entity_span_masks"].to(device),
-				"cake_ids": batch["cake_ids"].to(device)
+				"entity_span_masks": batch["entity_span_masks"].to(device)
 			}
 			labels = batch["gold_labels"]
 			logits = model(**input_dict)[0]
@@ -301,9 +264,9 @@ def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
 def split_data_based_on_subtasks(data, subtasks):
 	# We will split the data into data_instances based on subtask_labels
 	subtasks_data = {subtask: list() for subtask in subtasks}
-	for text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in data:
+	for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in data:
 		for subtask in subtasks:
-			subtasks_data[subtask].append((text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict[subtask][0], subtask_labels_dict[subtask][1]))
+			subtasks_data[subtask].append((text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict[subtask][0], subtask_labels_dict[subtask][1]))
 	return subtasks_data
 
 
@@ -335,7 +298,7 @@ def main():
 		config = BertConfig.from_pretrained(args.bert_model)
 		config.subtasks = subtasks_list
 		config.task = args.task
-		config.use_cake_embs = args.use_cake_embs
+
 		# print(config)
 		model = MultiTaskBertForCovidEntityClassification.from_pretrained(
 			args.bert_model,
@@ -482,8 +445,7 @@ def main():
 					"entity_end_positions": batch["entity_end_positions"].to(device),
 					"entity_span_widths": batch["entity_span_widths"].to(device),
 					"entity_span_masks": batch["entity_span_masks"].to(device),
-					"labels": batch["gold_labels"],
-					"cake_ids": batch["cake_ids"].to(device)
+					"labels": batch["gold_labels"]
 				}
 
 				loss, logits = model(**input_dict)

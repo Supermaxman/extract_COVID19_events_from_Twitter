@@ -179,10 +179,10 @@ def make_instances_from_dataset(dataset, ctxt2id):
 		# print(tweet_tokens_char_mapping)
 		# Get candidate_chunk's offsets in terms of tweet_tokens
 		candidate_chunks_offsets_from_tweet_tokens = list()
-		candidate_chunk_cake_ids = list()
+
 		ignore_flags = list()
 		for chunk_start_idx, chunk_end_idx in candidate_chunks_offsets:
-			chunk_cake_id = ctxt2id[text[chunk_start_idx:chunk_end_idx]]
+
 			ignore_flag = False
 			# Find the tweet_token id in which the chunk_start_idx belongs
 			chunk_start_token_idx = None
@@ -215,8 +215,6 @@ def make_instances_from_dataset(dataset, ctxt2id):
 				ignore_ones.append(ignore_info)
 			ignore_flags.append(ignore_flag)
 			candidate_chunks_offsets_from_tweet_tokens.append((chunk_start_token_idx, chunk_end_token_idx))
-			if not ignore_flag:
-				candidate_chunk_cake_ids.append(chunk_cake_id)
 		candidate_chunks_from_tokens = [' '.join(tweet_tokens[c[0]:c[1]]) for c in candidate_chunks_offsets_from_tweet_tokens]
 
 		# TODO: Verify if the candidate_chunks from tokens and from text are the same
@@ -278,18 +276,18 @@ def make_instances_from_dataset(dataset, ctxt2id):
 			if question_tag in ["name", "close_contact", "who_cure", "opinion"]:
 				# add "AUTHOR OF THE TWEET" as a candidate chunk
 				final_candidate_chunks_with_token_id.append(["author_chunk", "AUTHOR OF THE TWEET", [0,0]])
-				candidate_chunk_cake_ids.append(0)
+
 				# print(final_candidate_chunks_with_token_id)
 				# exit()
 			elif question_tag in ["where", "recent_travel"]:
 				# add "NEAR AUTHOR OF THE TWEET" as a candidate chunk
 				final_candidate_chunks_with_token_id.append(["near_author_chunk", "AUTHOR OF THE TWEET", [0,0]])
-				candidate_chunk_cake_ids.append(0)
+
 
 			# If there are more then one candidate slot with the same candidate chunk then simply keep the first occurrence. Remove the rest.
 			current_candidate_chunks = set()
-			assert len(candidate_chunk_cake_ids) == len(final_candidate_chunks_with_token_id)
-			for candidate_chunk_with_id, candidate_chunk_cake_id in zip(final_candidate_chunks_with_token_id, candidate_chunk_cake_ids):
+
+			for candidate_chunk_with_id in final_candidate_chunks_with_token_id:
 				candidate_chunk_id = candidate_chunk_with_id[0]
 				candidate_chunk = candidate_chunk_with_id[1]
 
@@ -368,7 +366,6 @@ def make_instances_from_dataset(dataset, ctxt2id):
 				task_instances_dict[question_tag].append(
 					(text,
 					 candidate_chunk,
-					 candidate_chunk_cake_id,
 					 candidate_chunk_id,
 					 chunk_start_text_id,
 					 chunk_end_text_id,
