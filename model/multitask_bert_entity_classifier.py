@@ -164,7 +164,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		contextualized_embeddings = outputs[0]
 
 		# [bsize, emb_size]
-		# pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
+		pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
 
 		# [bsize, seq_len, emb_size]
 		# contextualized_embeddings
@@ -172,7 +172,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# entity_span_masks
 
 		# [bsize, emb_size]
-		pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
+		# pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
 
 		if self.use_cake_embs:
 			# DEBUG:
@@ -188,10 +188,10 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		pooled_output = self.dropout(pooled_output)
 
 		# [bsize, p_emb_size]
-		pos_embeddings = self.positional_embeddings(entity_span_widths)
+		# pos_embeddings = self.positional_embeddings(entity_span_widths)
 
 		# [bsize, total_emb_size]
-		pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
+		# pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
 		# Get logits for each subtask
 		logits = {}
 		for subtask in self.subtasks:
