@@ -115,7 +115,7 @@ def get_tweet_tokens_from_tags(tags):
 	tokens = [e.rsplit("/", 3)[0] for e in tags.split()]
 	return ' '.join(tokens)
 
-def make_instances_from_dataset(dataset, ctxt2id):
+def make_instances_from_dataset(dataset):
 	# Create instances for all each task.
 	# we will store instances for each task separately in a dictionary
 	task_instances_dict = dict()
@@ -410,8 +410,8 @@ def main():
 	logging.info(f"Total annotations:{len(dataset)}")
 	logging.info(f"Creating labeled data instances from annotations...")
 	print(dataset[0].keys())
-	ctxt2id = json.load(open(args.save_file.replace('.pkl', '_ctxt2id.json')))
-	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset, ctxt2id)
+
+	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset)
 	# Save in pickle file
 	logging.info(f"Saving all the instances, statistics and labels in {args.save_file}")
 	save_in_pickle((task_instances_dict, tag_statistics, question_keys_and_tags), args.save_file)
