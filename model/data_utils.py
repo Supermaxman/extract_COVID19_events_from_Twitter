@@ -77,7 +77,7 @@ class TokenizeCollator():
 		print(entity_span_widths)
 		print(entity_span_widths.shape)
 		entity_mask = create_mask(entity_start_positions, entity_end_positions, input_ids.shape[1])
-		print(entity_mask)
+		print(entity_mask[0])
 		print(entity_mask.shape)
 		exit()
 		# Also extract the gold labels
@@ -120,6 +120,6 @@ def create_mask(start_indices, end_indices, seq_len):
 	beg = start_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
 	end = end_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
 	mask = cols.ge(beg) & cols.lt(end)
-	# mask.float()
+	mask = mask.double()
 	return mask
 
