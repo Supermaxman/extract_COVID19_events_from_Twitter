@@ -98,8 +98,8 @@ def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
 	original_text_list = list()
 	for subtask in subtasks:
 		# get the instances for current subtask and add it to a set
-		for text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label in task_instances[subtask]:
-			instance = (text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk)
+		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label in task_instances[subtask]:
+			instance = (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk)
 			if text not in text_to_subtask_instances:
 				original_text_list.append(text)
 				text_to_subtask_instances[text] = dict()
@@ -254,7 +254,7 @@ def compute_f1(a_gold, a_pred):
 def get_raw_scores(data, prediction_scores, positive_only=False):
 	predicted_chunks_for_each_instance = dict()
 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-	for (text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
+	for (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
 		original_text = text
 		# print(text)
 		# print(chunk)
@@ -343,7 +343,7 @@ def format_time(elapsed):
 
 def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
 	predicted_chunks_for_each_instance = dict()
-	for (text, chunk, cake_id, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
+	for (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
 		original_text = text
 		# print(text)
 		# print(chunk)
