@@ -111,3 +111,4 @@ class TokenizeCollator():
 
 
 def create_mask(start_indices, end_indices, seq_len):
+	pass
