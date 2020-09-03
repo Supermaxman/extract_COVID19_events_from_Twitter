@@ -115,6 +115,6 @@ def create_mask(start_indices, end_indices, seq_len):
 	beg = start_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
 	end = end_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
 	mask = cols.ge(beg) & cols.lt(end)
-	mask = mask.double()
+	mask = mask.float()
 	return mask
 
