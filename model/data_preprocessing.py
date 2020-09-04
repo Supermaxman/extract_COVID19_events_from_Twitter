@@ -192,8 +192,8 @@ def make_instances_from_dataset(dataset):
 					# if chunk end offset is the last character of the token
 					chunk_end_token_idx = token_idx+1
 			if chunk_start_token_idx == None or chunk_end_token_idx == None:
-				logging.error(f"Tweet id:{id}\nCouldn't find chunk tokens for chunk offsets [{chunk_start_idx}, {chunk_end_idx}]:{text[chunk_start_idx:chunk_end_idx]};")
-				logging.error(f"Found chunk start and end token idx [{chunk_start_token_idx}, {chunk_end_token_idx}]")
+				logging.error(f"Tweet id:{id}\nCouldn't find chunk tokens for chunk offsets [{chunk_start_idx}, {chunk_end_idx}]:{text[chunk_start_idx:chunk_end_idx]};")  
+				logging.error(f"Found chunk start and end token idx [{chunk_start_token_idx}, {chunk_end_token_idx}]")  
 				# logging.error(f"tweet_tokens_char_mapping len {len(tweet_tokens_char_mapping)}= {tweet_tokens_char_mapping}")
 				logging.error(f"Ignoring this chunk")
 				ignore_flag = True
@@ -267,9 +267,9 @@ def make_instances_from_dataset(dataset):
 		# tweet_tokens = [URL_TOKEN if e.startswith("http") or 'twitter.com' in e or e.startswith('www.') else e for e in tweet_tokens]
 		final_tweet_tokens = [URL_TOKEN if e.startswith("http") or 'twitter.com' in e or e.startswith('www.') else e for e in tweet_tokens]
 		final_candidate_chunks_with_token_id = [(f"{c[0]}_{c[1]}", ' '.join(tweet_tokens[c[0]:c[1]]), c) for c in candidate_chunks_offsets_from_tweet_tokens]
-
+		
 		for question_tag, question_key in question_keys_and_tags:
-
+			
 			if question_tag in ["name", "close_contact", "who_cure", "opinion"]:
 				# add "AUTHOR OF THE TWEET" as a candidate chunk
 				final_candidate_chunks_with_token_id.append(["author_chunk", "AUTHOR OF THE TWEET", [0,0]])
@@ -294,7 +294,7 @@ def make_instances_from_dataset(dataset):
 				chunk_end_id = candidate_chunk_with_id[2][1]
 				# print(len(tweet_tokens_char_mapping), len(tweet_tokens), chunk_start_id, chunk_end_id)
 				chunk_end_text_id = tweet_tokens_char_mapping[chunk_end_id-1][-1]+1
-
+				
 				if candidate_chunk == "AUTHOR OF THE TWEET":
 					# No need to verify or fix this candidate_chunk
 					# print("VERIFY if chunk coming here!")
