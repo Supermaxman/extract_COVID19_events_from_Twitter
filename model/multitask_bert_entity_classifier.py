@@ -94,8 +94,14 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
 		self.subtasks = config.subtasks
+		extra_size = 0
+		self.positional_embeddings = nn.Embedding(
+			num_embeddings=100,
+			embedding_dim=25
+		)
+		extra_size += 25
 		# We will create a dictionary of classifiers based on the number of subtasks
-		self.classifiers = {subtask: nn.Linear(config.hidden_size, config.num_labels) for subtask in self.subtasks}
+		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
 		# self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
 		self.init_weights()
@@ -104,6 +110,9 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self,
 		input_ids,
 		entity_start_positions,
+		entity_end_positions,
+		entity_span_widths,
+		entity_span_masks,
 		attention_mask=None,
 		token_type_ids=None,
 		position_ids=None,
@@ -169,8 +178,14 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		# NOTE: outputs[0] has all the hidden dimensions for the entire sequence
 		# We will extract the embeddings indexed with entity_start_positions
-		pooled_output = outputs[0][entity_start_positions[:, 0], entity_start_positions[:, 1], :]
+		contextualized_embeddings = outputs[0]
+		# pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
 
+		pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
+
+		pos_embeddings = self.positional_embeddings(entity_span_widths)
+
+		pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
 		# DEBUG:
 		# print(pooled_output.shape)
 		# exit()
@@ -211,10 +226,11 @@ class COVID19TaskDataset(Dataset):
 		return self.nsamples
 
 class TokenizeCollator():
-	def __init__(self, tokenizer, subtasks, entity_start_token_id):
+	def __init__(self, tokenizer, subtasks, entity_start_token_id, entity_end_token_id):
 		self.tokenizer = tokenizer
 		self.subtasks = subtasks
 		self.entity_start_token_id = entity_start_token_id
+		self.entity_end_token_id = entity_end_token_id
 
 	def fix_user_mentions_in_tokenized_tweet(self, tokenized_tweet):
 		return ' '.join(["@USER" if word.startswith("@") else word for word in tokenized_tweet.split()])
@@ -250,12 +266,22 @@ class TokenizeCollator():
 		# print(input_ids)
 		# First extract the indices of <E> token in each sentence and save it in the batch
 		entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
+		entity_end_positions = (input_ids == self.entity_end_token_id).nonzero()
+
+		entity_span_widths = entity_end_positions[:, 1] - entity_start_positions[:, 1] - 1
+		entity_span_widths = torch.clamp(entity_span_widths, 0, 100)
+		# mask over <E> ... </E>
+		entity_span_masks = create_mask(entity_start_positions, entity_end_positions + 1, input_ids.shape[1])
+
 		# Also extract the gold labels
 		labels = {subtask: torch.LongTensor(subtask_gold_labels) for subtask, subtask_gold_labels in gold_labels.items()}
 		# print(len(batch))
 		if entity_start_positions.size(0) == 0:
 			# Send entity_start_positions to [CLS]'s position i.e. 0
 			entity_start_positions = torch.zeros(input_ids.size(0), 2).long()
+		if entity_end_positions.size(0) == 0:
+			entity_end_positions = torch.zeros(input_ids.size(0), 2).long()
+
 		# print(entity_start_positions)
 		# print(input_ids.size(), labels.size())
 
@@ -268,59 +294,24 @@ class TokenizeCollator():
 				logging.error(f"{subtask}, {labels[subtask]}, {labels[subtask].size(0)}")
 				exit()
 		# assert input_ids.size(0) == labels.size(0)
-		return {"input_ids": input_ids, "entity_start_positions": entity_start_positions, "gold_labels": labels, "batch_data": batch}
+		return {"input_ids": input_ids,
+						"entity_start_positions": entity_start_positions,
+						"entity_end_positions": entity_end_positions,
+						"entity_span_widths": entity_span_widths,
+						"entity_span_masks": entity_span_masks,
+						"gold_labels": labels,
+						"batch_data": batch}
 
 
-"""
-def _glue_convert_examples_to_features(
-	examples: List[InputExample],
-	tokenizer: PreTrainedTokenizer,
-	max_length: Optional[int] = None,
-	task=None,
-	label_list=None,
-	output_mode=None,
-):
-	if max_length is None:
-		max_length = tokenizer.max_len
+def create_mask(start_indices, end_indices, seq_len):
+	batch_size = start_indices.shape[0]
+	cols = torch.LongTensor(range(seq_len)).repeat(batch_size, 1)
+	beg = start_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
+	end = end_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
+	mask = cols.ge(beg) & cols.lt(end)
+	mask = mask.float()
+	return mask
 
-	if task is not None:
-		processor = glue_processors[task]()
-		if label_list is None:
-			label_list = processor.get_labels()
-			logging.info("Using label list %s for task %s" % (label_list, task))
-		if output_mode is None:
-			output_mode = glue_output_modes[task]
-			logging.info("Using output mode %s for task %s" % (output_mode, task))
-
-	label_map = {label: i for i, label in enumerate(label_list)}
-
-	def label_from_example(example: InputExample) -> Union[int, float]:
-		if output_mode == "classification":
-			return label_map[example.label]
-		elif output_mode == "regression":
-			return float(example.label)
-		raise KeyError(output_mode)
-
-	labels = [label_from_example(example) for example in examples]
-
-	batch_encoding = tokenizer.batch_encode_plus(
-		[(example.text_a, example.text_b) for example in examples], max_length=max_length, pad_to_max_length=True,
-	)
-
-	features = []
-	for i in range(len(examples)):
-		inputs = {k: batch_encoding[k][i] for k in batch_encoding}
-
-		feature = InputFeatures(**inputs, label=labels[i])
-		features.append(feature)
-
-	for i, example in enumerate(examples[:5]):
-		logging.info("*** Example ***")
-		logging.info("guid: %s" % (example.guid))
-		logging.info("features: %s" % features[i])
-
-	return features
-"""
 
 def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_flag = False):
 	# Create tqdm progressbar
@@ -340,7 +331,12 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 	with torch.no_grad():
 		for step, batch in enumerate(pbar):
 			# Create testing instance for model
-			input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device)}
+			input_dict = {"input_ids": batch["input_ids"].to(device),
+										"entity_start_positions": batch["entity_start_positions"].to(device),
+										"entity_end_positions": batch["entity_end_positions"].to(device),
+										"entity_span_widths": batch["entity_span_widths"].to(device),
+										"entity_span_masks": batch["entity_span_masks"].to(device),
+										}
 			labels = batch["gold_labels"]
 			logits = model(**input_dict)[0]
 
@@ -465,6 +461,7 @@ def main():
 	for subtask, classifier in model.classifiers.items():
 		classifier.to(device)
 	entity_start_token_id = tokenizer.convert_tokens_to_ids(["<E>"])[0]
+	entity_end_token_id = tokenizer.convert_tokens_to_ids(["</E>"])[0]
 
 	logging.info(f"Task dataset for task: {args.task} loaded from {args.data_file}.")
 
@@ -495,7 +492,7 @@ def main():
 	test_dataset = COVID19TaskDataset(test_data)
 	logging.info("Loaded the datasets into Pytorch datasets")
 
-	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id)
+	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id)
 	train_dataloader = DataLoader(train_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=True, num_workers=0, collate_fn=tokenize_collator)
 	dev_dataloader = DataLoader(dev_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
 	test_dataloader = DataLoader(test_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
@@ -567,7 +564,13 @@ def main():
 					batch["gold_labels"][subtask] = subtask_labels
 					# print("HAHAHAHAH:", batch["gold_labels"][subtask].is_cuda)
 				# Forward
-				input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device), "labels": batch["gold_labels"]}
+				input_dict = {"input_ids": batch["input_ids"].to(device),
+											"entity_start_positions": batch["entity_start_positions"].to(device),
+											"entity_end_positions": batch["entity_end_positions"].to(device),
+											"entity_span_widths": batch["entity_span_widths"].to(device),
+											"entity_span_masks": batch["entity_span_masks"].to(device),
+											"labels": batch["gold_labels"],
+											}
 
 				input_ids = batch["input_ids"]
 				entity_start_positions = batch["entity_start_positions"]
