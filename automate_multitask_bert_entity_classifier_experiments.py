@@ -29,7 +29,7 @@ REDO_FLAG = True
 RETRAIN_FLAG = True
 # REDO_FLAG = False
 pre_model_name = 'bert'
-run_name = 'max_pool_width'
+run_name = 'max_pool'
 gpu_id = 4
 
 # We will save all the tasks and subtask's results and model configs in this dictionary

@@ -95,11 +95,11 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		self.subtasks = config.subtasks
 		extra_size = 0
-		self.positional_embeddings = nn.Embedding(
-			num_embeddings=100,
-			embedding_dim=25
-		)
-		extra_size += 25
+		# self.positional_embeddings = nn.Embedding(
+		# 	num_embeddings=100,
+		# 	embedding_dim=25
+		# )
+		# extra_size += 25
 		# We will create a dictionary of classifiers based on the number of subtasks
 		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
 		# self.classifier = nn.Linear(config.hidden_size, config.num_labels)
@@ -183,9 +183,9 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
 
-		pos_embeddings = self.positional_embeddings(entity_span_widths)
+		# pos_embeddings = self.positional_embeddings(entity_span_widths)
 
-		pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
+		# pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
 		# DEBUG:
 		# print(pooled_output.shape)
 		# exit()
