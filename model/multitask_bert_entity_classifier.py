@@ -29,20 +29,23 @@ import re
 import collections
 
 from utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, save_in_json, get_raw_scores, get_TP_FP_FN
+import json
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument("-d", "--data_file", help="Path to the pickle file that contains the training instances", type=str, required=True)
 parser.add_argument("-t", "--task", help="Event for which we want to train the baseline", type=str, required=True)
 parser.add_argument("-s", "--save_directory", help="Path to the directory where we will save model and the tokenizer", type=str, required=True)
+parser.add_argument("-pm", "--pre_model", help="Pre-trained model to initialize.", type=str, required=True)
+parser.add_argument("-mf", "--model_flags", help="Flags for model config.", type=str, required=True)
 parser.add_argument("-o", "--output_dir", help="Path to the output directory where we will save all the model results", type=str, required=True)
 parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the model needs to be retrained or loaded from the existing save_directory", action="store_true")
 parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
 parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 args = parser.parse_args()
 
-# pre_model_name = 'bert-base-cased'
-pre_model_name = 'digitalepidemiologylab/covid-twitter-bert'
+pre_model_name = args.pre_model
+model_flags = json.loads(args.model_flags)
 
 import logging
 # Ref: https://stackoverflow.com/a/49202811/4535284
@@ -71,10 +74,12 @@ else:
 	device = torch.device("cpu")
 	logging.info(f"Using CPU to train")
 
+
 def make_dir_if_not_exists(directory):
 	if not os.path.exists(directory):
 		logging.info("Creating new directory: {}".format(directory))
 		os.makedirs(directory)
+
 
 def format_time(elapsed):
 	'''
@@ -86,6 +91,7 @@ def format_time(elapsed):
 	# Format as hh:mm:ss
 	return str(datetime.timedelta(seconds=elapsed_rounded))
 
+
 class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 	def __init__(self, config):
 		super().__init__(config)
@@ -93,10 +99,19 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
-
+		extra_size = 0
+		width_embeddings = model_flags['width_embeddings'].lower()
+		if width_embeddings == 'none':
+			pass
+		elif width_embeddings == 'single_width':
+			self.width_embeddings = nn.Embedding(
+				num_embeddings=100,
+				embedding_dim=25
+			)
+			extra_size += 25
 		self.subtasks = config.subtasks
 		# We will create a dictionary of classifiers based on the number of subtasks
-		self.classifiers = {subtask: nn.Linear(config.hidden_size, config.num_labels) for subtask in self.subtasks}
+		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
 		# self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
 		self.init_weights()
@@ -105,6 +120,9 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self,
 		input_ids,
 		entity_start_positions,
+		entity_end_positions,
+		entity_span_widths,
+		entity_span_masks,
 		attention_mask=None,
 		token_type_ids=None,
 		position_ids=None,
@@ -112,46 +130,6 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		inputs_embeds=None,
 		labels=None,
 	):
-		r"""
-		labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`, defaults to :obj:`None`):
-			Labels for computing the sequence classification/regression loss.
-			Indices should be in :obj:`[0, ..., config.num_labels - 1]`.
-			If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
-			If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-
-	Returns:
-		:obj:`tuple(torch.FloatTensor)` comprising various elements depending on the configuration (:class:`~transformers.BertConfig`) and inputs:
-		loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when :obj:`label` is provided):
-			Classification (or regression if config.num_labels==1) loss.
-		logits (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, config.num_labels)`):
-			Classification (or regression if config.num_labels==1) scores (before SoftMax).
-		hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``config.output_hidden_states=True``):
-			Tuple of :obj:`torch.FloatTensor` (one for the output of the embeddings + one for the output of each layer)
-			of shape :obj:`(batch_size, sequence_length, hidden_size)`.
-
-			Hidden-states of the model at the output of each layer plus the initial embedding outputs.
-		attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``config.output_attentions=True``):
-			Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape
-			:obj:`(batch_size, num_heads, sequence_length, sequence_length)`.
-
-			Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
-			heads.
-
-	Examples::
-
-		from transformers import BertTokenizer, BertForSequenceClassification
-		import torch
-
-		tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-		model = BertForSequenceClassification.from_pretrained('bert-base-uncased')
-
-		input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute", add_special_tokens=True)).unsqueeze(0)  # Batch size 1
-		labels = torch.tensor([1]).unsqueeze(0)  # Batch size 1
-		outputs = model(input_ids, labels=labels)
-
-		loss, logits = outputs[:2]
-
-		"""
 
 		outputs = self.bert(
 			input_ids,
@@ -170,13 +148,30 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		# NOTE: outputs[0] has all the hidden dimensions for the entire sequence
 		# We will extract the embeddings indexed with entity_start_positions
-		pooled_output = outputs[0][entity_start_positions[:, 0], entity_start_positions[:, 1], :]
-		
+		contextualized_embeddings = outputs[0]
+		pooling_type = model_flags['pooling_type'].lower()
+		if pooling_type == 'head':
+			pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
+		elif pooling_type == 'span_max_pool':
+			pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
+		elif pooling_type == 'span_attention_pool':
+			raise NotImplementedError()
+		else:
+			raise ValueError(f'Unknown pooling_type: {pooling_type}')
 		# DEBUG:
 		# print(pooled_output.shape)
 		# exit()
 
 		pooled_output = self.dropout(pooled_output)
+
+		width_embeddings = model_flags['width_embeddings'].lower()
+		if width_embeddings == 'none':
+			pass
+		elif width_embeddings == 'single_width':
+			width_embeddings = self.width_embeddings(entity_span_widths)
+
+			pooled_output = torch.cat((pooled_output, width_embeddings), 1)
+
 		# Get logits for each subtask
 		# logits = self.classifier(pooled_output)
 		logits = {subtask: self.classifiers[subtask](pooled_output) for subtask in self.subtasks}
@@ -198,6 +193,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		return outputs  # (loss), logits, (hidden_states), (attentions)
 
+
 class COVID19TaskDataset(Dataset):
 	"""COVID19TaskDataset is a generic dataset class which will read data related to different questions"""
 	def __init__(self, instances):
@@ -211,11 +207,13 @@ class COVID19TaskDataset(Dataset):
 	def __len__(self):
 		return self.nsamples
 
+
 class TokenizeCollator():
-	def __init__(self, tokenizer, subtasks, entity_start_token_id):
+	def __init__(self, tokenizer, subtasks, entity_start_token_id, entity_end_token_id):
 		self.tokenizer = tokenizer
 		self.subtasks = subtasks
 		self.entity_start_token_id = entity_start_token_id
+		self.entity_end_token_id = entity_end_token_id
 
 	def fix_user_mentions_in_tokenized_tweet(self, tokenized_tweet):
 		if 'twitter' in pre_model_name:
@@ -254,14 +252,22 @@ class TokenizeCollator():
 		# print(input_ids)
 		# First extract the indices of <E> token in each sentence and save it in the batch
 		entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
+		entity_end_positions = (input_ids == self.entity_end_token_id).nonzero()
+		# width of span within <E> ... </E>
+		entity_span_widths = entity_end_positions[:, 1] - entity_start_positions[:, 1] - 1
+		entity_span_widths = torch.clamp(entity_span_widths, 0, 100)
+		# mask over <E> ... </E>
+		entity_span_masks = create_mask(entity_start_positions, entity_end_positions + 1, input_ids.shape[1])
 		# Also extract the gold labels
 		labels = {subtask: torch.LongTensor(subtask_gold_labels) for subtask, subtask_gold_labels in gold_labels.items()}
 		# print(len(batch))
+
 		if entity_start_positions.size(0) == 0:
 			# Send entity_start_positions to [CLS]'s position i.e. 0
 			entity_start_positions = torch.zeros(input_ids.size(0), 2).long()
-		# print(entity_start_positions)
-		# print(input_ids.size(), labels.size())
+
+		if entity_end_positions.size(0) == 0:
+			entity_end_positions = torch.zeros(input_ids.size(0), 2).long()
 
 		# Verify that the number of labels for each subtask is equal to the number of instances
 		for subtask in self.subtasks:
@@ -272,59 +278,26 @@ class TokenizeCollator():
 				logging.error(f"{subtask}, {labels[subtask]}, {labels[subtask].size(0)}")
 				exit()
 		# assert input_ids.size(0) == labels.size(0)
-		return {"input_ids": input_ids, "entity_start_positions": entity_start_positions, "gold_labels": labels, "batch_data": batch}
+		return {
+			"input_ids": input_ids,
+			"entity_start_positions": entity_start_positions,
+			"entity_end_positions": entity_end_positions,
+			"entity_span_widths": entity_span_widths,
+			"entity_span_masks": entity_span_masks,
+			"gold_labels": labels,
+			"batch_data": batch
+		}
 
 
-"""
-def _glue_convert_examples_to_features(
-	examples: List[InputExample],
-	tokenizer: PreTrainedTokenizer,
-	max_length: Optional[int] = None,
-	task=None,
-	label_list=None,
-	output_mode=None,
-):
-	if max_length is None:
-		max_length = tokenizer.max_len
+def create_mask(start_indices, end_indices, seq_len):
+	batch_size = start_indices.shape[0]
+	cols = torch.LongTensor(range(seq_len)).repeat(batch_size, 1)
+	beg = start_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
+	end = end_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
+	mask = cols.ge(beg) & cols.lt(end)
+	mask = mask.float()
+	return mask
 
-	if task is not None:
-		processor = glue_processors[task]()
-		if label_list is None:
-			label_list = processor.get_labels()
-			logging.info("Using label list %s for task %s" % (label_list, task))
-		if output_mode is None:
-			output_mode = glue_output_modes[task]
-			logging.info("Using output mode %s for task %s" % (output_mode, task))
-
-	label_map = {label: i for i, label in enumerate(label_list)}
-
-	def label_from_example(example: InputExample) -> Union[int, float]:
-		if output_mode == "classification":
-			return label_map[example.label]
-		elif output_mode == "regression":
-			return float(example.label)
-		raise KeyError(output_mode)
-
-	labels = [label_from_example(example) for example in examples]
-
-	batch_encoding = tokenizer.batch_encode_plus(
-		[(example.text_a, example.text_b) for example in examples], max_length=max_length, pad_to_max_length=True,
-	)
-
-	features = []
-	for i in range(len(examples)):
-		inputs = {k: batch_encoding[k][i] for k in batch_encoding}
-
-		feature = InputFeatures(**inputs, label=labels[i])
-		features.append(feature)
-
-	for i, example in enumerate(examples[:5]):
-		logging.info("*** Example ***")
-		logging.info("guid: %s" % (example.guid))
-		logging.info("features: %s" % features[i])
-
-	return features
-"""
 
 def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_flag = False):
 	# Create tqdm progressbar
@@ -344,7 +317,13 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 	with torch.no_grad():
 		for step, batch in enumerate(pbar):
 			# Create testing instance for model
-			input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device)}
+			input_dict = {
+				"input_ids": batch["input_ids"].to(device),
+				"entity_start_positions": batch["entity_start_positions"].to(device),
+				"entity_end_positions": batch["entity_end_positions"].to(device),
+				"entity_span_widths": batch["entity_span_widths"].to(device),
+				"entity_span_masks": batch["entity_span_masks"].to(device)
+			}
 			labels = batch["gold_labels"]
 			logits = model(**input_dict)[0]
 
@@ -380,6 +359,7 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 			# print(prediction_scores)
 			# print(predicted_labels)
 	return all_predictions, all_prediction_scores, all_labels
+
 
 def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
 	plt.cla()
@@ -419,6 +399,7 @@ def log_multitask_data_statistics(data, subtasks):
 		logging.info(f"Subtask:{subtask:>15}\tPositive labels = {pos_counts[subtask]}\tNegative labels = {neg_counts[subtask]}")
 	return len(data), pos_counts, neg_counts
 
+
 def main():
 	# Read all the data instances
 	task_instances_dict, tag_statistics, question_keys_and_tags = load_from_pickle(args.data_file)
@@ -437,7 +418,11 @@ def main():
 		model = MultiTaskBertForCovidEntityClassification.from_pretrained(pre_model_name, config=config)
 
 		# Add new tokens in tokenizer
-		new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>", "<URL>", "@USER"]}
+		if 'twitter' in pre_model_name:
+			new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>"]}
+		else:
+			new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>", "<URL>", "@USER"]}
+
 		# new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>"]}
 		tokenizer.add_special_tokens(new_special_tokens_dict)
 		
@@ -469,7 +454,8 @@ def main():
 	for subtask, classifier in model.classifiers.items():
 		classifier.to(device)
 	entity_start_token_id = tokenizer.convert_tokens_to_ids(["<E>"])[0]
-	
+	entity_end_token_id = tokenizer.convert_tokens_to_ids(["</E>"])[0]
+
 	logging.info(f"Task dataset for task: {args.task} loaded from {args.data_file}.")
 	
 	model_config = dict()
@@ -499,7 +485,7 @@ def main():
 	test_dataset = COVID19TaskDataset(test_data)
 	logging.info("Loaded the datasets into Pytorch datasets")
 
-	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id)
+	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id)
 	train_dataloader = DataLoader(train_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=True, num_workers=0, collate_fn=tokenize_collator)
 	dev_dataloader = DataLoader(dev_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
 	test_dataloader = DataLoader(test_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
@@ -578,12 +564,15 @@ def main():
 					batch["gold_labels"][subtask] = subtask_labels
 					# print("HAHAHAHAH:", batch["gold_labels"][subtask].is_cuda)
 				# Forward
-				input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device), "labels": batch["gold_labels"]}
+				input_dict = {
+					"input_ids": batch["input_ids"].to(device),
+					"entity_start_positions": batch["entity_start_positions"].to(device),
+					"entity_end_positions": batch["entity_end_positions"].to(device),
+					"entity_span_widths": batch["entity_span_widths"].to(device),
+					"entity_span_masks": batch["entity_span_masks"].to(device),
+					"labels": batch["gold_labels"]
+				}
 
-				input_ids = batch["input_ids"]
-				entity_start_positions = batch["entity_start_positions"]
-				gold_labels = batch["gold_labels"]
-				batch_data = batch["batch_data"]
 				loss, logits = model(**input_dict)
 				# loss = loss / accumulation_steps
 				# Accumulate loss
@@ -691,19 +680,6 @@ def main():
 	best_dev_F1s = {subtask: 0.0 for subtask in model.subtasks}
 	test_subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
 	dev_subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
-	# for subtask in model.subtasks:
-	# 	test_subtask_data = test_subtasks_data[subtask]
-	# 	test_subtask_prediction_scores = test_prediction_scores[subtask]
-	# 	for t in thresholds:
-	# 		test_F1, test_P, test_R, test_TP, test_FP, test_FN = get_TP_FP_FN(test_subtask_data, test_subtask_prediction_scores, THRESHOLD=t)
-	# 		test_subtasks_t_F1_P_Rs[subtask].append((t, test_F1, test_P, test_R, test_TP + test_FN, test_TP, test_FP, test_FN))
-	# 		if test_F1 > best_test_F1s[subtask]:
-	# 			best_test_thresholds[subtask] = t
-	# 			best_test_F1s[subtask] = test_F1
-
-	# 	logging.info(f"Subtask:{subtask:>15}")
-	# 	log_list(test_subtasks_t_F1_P_Rs[subtask])
-	# 	logging.info(f"Best Test Threshold for subtask: {best_test_thresholds[subtask]}\t Best test F1: {best_test_F1s[subtask]}")
 
 	for subtask in model.subtasks:	
 		dev_subtask_data = dev_subtasks_data[subtask]
@@ -779,29 +755,6 @@ def main():
 		N = TP + FN
 		results[subtask]["N"] = N
 
-		# # Top predictions in the Test case
-		# prediction_scores[subtask] = np.array(prediction_scores[subtask])
-		# sorted_prediction_ids = np.argsort(-prediction_scores[subtask])
-		# K = 200
-		# logging.info("Top {} predictions:".format(K))
-		# logging.info("\t".join(["Tweet", "BERT model input", "candidate chunk", "prediction score", "predicted label", "gold label", "gold chunks"]))
-		# for i in range(K):
-		# 	instance_id = sorted_prediction_ids[i]
-		# 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-		# 	tweet = test_subtasks_data[subtask][instance_id][0].replace("\n", " ")
-		# 	chunk = test_subtasks_data[subtask][instance_id][1]
-		# 	tokenized_tweet_with_masked_chunk = test_subtasks_data[subtask][instance_id][6]
-		# 	if chunk in ["AUTHOR OF THE TWEET", "NEAR AUTHOR OF THE TWEET"]:
-		# 		# First element of the text will be considered as AUTHOR OF THE TWEET or NEAR AUTHOR OF THE TWEET
-		# 		bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> </E>")
-		# 		# print(tokenized_tweet_with_masked_chunk)
-		# 		# print(bert_model_input_text)
-		# 		# exit()
-		# 	else:
-		# 		bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> " + chunk + " </E>")
-		# 	list_to_print = [tweet, bert_model_input_text, chunk, str(prediction_scores[subtask][instance_id]), str(predicted_labels[subtask][instance_id]), str(test_subtasks_data[subtask][instance_id][-1]), str(test_subtasks_data[subtask][instance_id][-2])]
-		# 	logging.info("\t".join(list_to_print))
-	
 	# Save model_config and results
 	model_config_file = os.path.join(args.output_dir, "model_config.json")
 	results_file = os.path.join(args.output_dir, "results.json")
@@ -810,10 +763,6 @@ def main():
 	logging.info(f"Saving results at {results_file}")
 	save_in_json(results, results_file)
 
-	# if args.save_figure_file:
-	# 	# Plot the precision recall curve
-	# 	disp = plot_precision_recall_curve(lr, test_X, test_Y)
-	# 	disp.ax_.set_title('2-class Precision-Recall curve')
-	# 	disp.ax_.figure.savefig(args.save_figure_file)
+
 if __name__ == '__main__':
 	main()

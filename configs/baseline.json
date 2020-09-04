@@ -1,0 +1,10 @@
+{
+  "run_name": "baseline",
+  "pre_model_name": "digitalepidemiologylab/covid-twitter-bert",
+  "model_type": "bert",
+  "gpu_id": 4,
+  "model_flags": {
+    "pooling_type": "head",
+    "width_embeddings": "none"
+  }
+}

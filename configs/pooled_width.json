@@ -1,0 +1,10 @@
+{
+  "run_name": "pooled_width",
+  "pre_model_name": "digitalepidemiologylab/covid-twitter-bert",
+  "model_type": "bert",
+  "gpu_id": 7,
+  "model_flags": {
+    "pooling_type": "span_max_pool",
+    "width_embeddings": "single_width"
+  }
+}

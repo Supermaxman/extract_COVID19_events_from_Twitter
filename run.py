@@ -10,11 +10,21 @@ import json
 import time
 import csv
 import subprocess
+import argparse
+import json
 
 import logging
 
 logging.basicConfig()
 logging.getLogger().setLevel(logging.INFO)
+
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument("-c", "--config", help="Path to the config file that contains the experiment details", type=str, required=True)
+args = parser.parse_args()
+
+config = json.load(open(args.config))
 
 task_type_to_datapath_dict = {
   "tested_positive": ("./data/positive-add_text.jsonl", "./data/test_positive.pkl"),
@@ -29,9 +39,11 @@ REDO_DATA_FLAG = False
 REDO_FLAG = True
 RETRAIN_FLAG = True
 # REDO_FLAG = False
-pre_model_name = 'bert'
-run_name = 'baseline_3'
-gpu_id = 6
+model_type = config['model_type']
+run_name = config['run_name']
+gpu_id = config['gpu_id']
+pre_model_name = config['pre_model_name']
+model_flags = config['model_flags']
 
 # We will save all the tasks and subtask's results and model configs in this dictionary
 all_task_results_and_model_configs = dict()
@@ -52,14 +64,20 @@ for taskname, (data_in_file, processed_out_file) in task_type_to_datapath_dict.i
   tested_tasks = list()
   logging.info(f"Training Mutlitask BERT Entity Classifier model on {processed_out_file}")
   # NOTE: After fixing the USER and URL tags
-  output_dir = os.path.join("results", f"multitask_{pre_model_name}_{run_name}_entity_classifier_fixed", taskname)
+  output_dir = os.path.join("results", f"multitask_{model_type}_{run_name}_entity_classifier_fixed", taskname)
   make_dir_if_not_exists(output_dir)
   results_file = os.path.join(output_dir, "results.json")
   model_config_file = os.path.join(output_dir, "model_config.json")
   if not os.path.exists(results_file) or REDO_FLAG:
     # Execute the Bert entity classifier train and test only if the results file doesn't exists
     # After fixing the USER and URL tags
-    multitask_bert_cmd = f"CUDA_VISIBLE_DEVICES={gpu_id} python model/multitask_{pre_model_name}_entity_classifier.py -d {processed_out_file} -t {taskname} -o {output_dir} -s saved_models/multitask_{pre_model_name}_{run_name}_entity_classifier_fixed/{taskname}_8_epoch_32_batch_multitask_bert_model"
+    multitask_bert_cmd = f"CUDA_VISIBLE_DEVICES={gpu_id} python model/multitask_{model_type}_entity_classifier.py " \
+      f"-d {processed_out_file} " \
+      f"-t {taskname} " \
+      f"-o {output_dir} " \
+      f"-s saved_models/multitask_{model_type}_{run_name}_entity_classifier_fixed/{taskname} " \
+      f"-pm {pre_model_name} " \
+      f"-mf '{json.dumps(model_flags)}' "
     if RETRAIN_FLAG:
       multitask_bert_cmd += " -r"
     logging.info(f"Running: {multitask_bert_cmd}")
@@ -86,7 +104,7 @@ for taskname, (data_in_file, processed_out_file) in task_type_to_datapath_dict.i
 # Read the results for each task and save them in csv file
 # NOTE: After fixing the USER and URL tags
 results_tsv_save_file = os.path.join("results",
-                                     f"all_experiments_multitask_{pre_model_name}_{run_name}_entity_classifier_fixed_results.tsv")
+                                     f"all_experiments_multitask_{model_type}_{run_name}_entity_classifier_fixed_results.tsv")
 with open(results_tsv_save_file, "w") as tsv_out:
   writer = csv.writer(tsv_out, delimiter='\t')
   header = ["Event", "Sub-task", "Train Data (size, pos., neg.)", "Dev Data (size, pos., neg.)",
