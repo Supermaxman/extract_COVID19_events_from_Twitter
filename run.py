@@ -36,7 +36,7 @@ task_type_to_datapath_dict = {
 
 # REDO_DATA_FLAG = True
 REDO_DATA_FLAG = False
-REDO_FLAG = True
+REDO_FLAG = False
 RETRAIN_FLAG = True
 # REDO_FLAG = False
 model_type = config['model_type']
