@@ -108,7 +108,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 				for subtask in self.subtasks
 		}
 		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
-		self.sub_modules = [self.classifiers]
+		self.sub_modules = [self.classifiers, self.poolers]
 
 		self.init_weights()
 
