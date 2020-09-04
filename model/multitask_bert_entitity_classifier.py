@@ -41,6 +41,8 @@ parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model
 parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 args = parser.parse_args()
 
+pre_model_name = 'bert-base-cased'
+
 import logging
 # Ref: https://stackoverflow.com/a/49202811/4535284
 for handler in logging.root.handlers[:]:
@@ -417,10 +419,10 @@ def main():
 		logging.info("Creating and training the model from 'bert-base-cased' ")
 		# Create the save_directory if not exists
 		make_dir_if_not_exists(args.save_directory)
-
 		# Initialize tokenizer and model with pretrained weights
-		tokenizer = BertTokenizer.from_pretrained('bert-base-cased')
-		config = BertConfig.from_pretrained('bert-base-cased')
+
+		tokenizer = BertTokenizer.from_pretrained(pre_model_name)
+		config = BertConfig.from_pretrained(pre_model_name)
 		config.subtasks = subtasks_list
 		# print(config)
 		model = MultiTaskBertForCovidEntityClassification.from_pretrained('bert-base-cased', config=config)
