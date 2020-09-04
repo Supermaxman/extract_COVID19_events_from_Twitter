@@ -417,7 +417,7 @@ def main():
 	data, subtasks_list = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics)
 
 	if args.retrain:
-		logging.info("Creating and training the model from 'bert-base-cased' ")
+		logging.info(f"Creating and training the model from {pre_model_name} ")
 		# Create the save_directory if not exists
 		make_dir_if_not_exists(args.save_directory)
 		# Initialize tokenizer and model with pretrained weights
@@ -426,7 +426,7 @@ def main():
 		config = BertConfig.from_pretrained(pre_model_name)
 		config.subtasks = subtasks_list
 		# print(config)
-		model = MultiTaskBertForCovidEntityClassification.from_pretrained('bert-base-cased', config=config)
+		model = MultiTaskBertForCovidEntityClassification.from_pretrained(pre_model_name, config=config)
 
 		# Add new tokens in tokenizer
 		new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>", "<URL>", "@USER"]}
