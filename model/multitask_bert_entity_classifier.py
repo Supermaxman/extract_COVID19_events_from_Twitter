@@ -42,7 +42,7 @@ parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, defau
 args = parser.parse_args()
 
 # pre_model_name = 'bert-base-cased'
-pre_model_name = 'pre_models/covid-twitter-bert'
+pre_model_name = 'digitalepidemiologylab/covid-twitter-bert'
 
 import logging
 # Ref: https://stackoverflow.com/a/49202811/4535284
@@ -218,7 +218,15 @@ class TokenizeCollator():
 		self.entity_start_token_id = entity_start_token_id
 
 	def fix_user_mentions_in_tokenized_tweet(self, tokenized_tweet):
-		return ' '.join(["@USER" if word.startswith("@") else word for word in tokenized_tweet.split()])
+		if 'twitter' in pre_model_name:
+			replace_txt = '@<user>'
+		else:
+			replace_txt = '@USER'
+		txt = ' '.join([replace_txt if word.startswith("@") else word for word in tokenized_tweet.split()])
+
+		if 'twitter' in pre_model_name:
+			txt = txt.replace('<URL>', '<url>')
+		return txt
 
 	def __call__(self, batch):
 		all_bert_model_input_texts = list()
@@ -511,6 +519,7 @@ def main():
 		# Batch size: 16, 32
 		# Learning rate (Adam): 5e-5, 3e-5, 2e-5
 		# Number of epochs: 2, 3, 4
+		# 2e-5
 		optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8)
 		logging.info("Created model optimizer")
 		# Number of training epochs. The BERT authors recommend between 2 and 4. 
@@ -524,7 +533,11 @@ def main():
 
 		# Create the learning rate scheduler.
 		# NOTE: num_warmup_steps = 0 is the Default value in run_glue.py
-		scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
+		scheduler = get_linear_schedule_with_warmup(
+			optimizer,
+			num_warmup_steps=total_steps // 10,
+			num_training_steps=total_steps
+		)
 		# We'll store a number of quantities such as training and validation loss, 
 		# validation accuracy, and timings.
 		training_stats = []
