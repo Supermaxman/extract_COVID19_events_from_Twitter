@@ -529,14 +529,16 @@ def main():
 
 		# Total number of training steps is [number of batches] x [number of epochs]. 
 		# (Note that this is not the same as the number of training samples).
-		total_steps = len(train_dataloader) * epochs
+		# total_train_steps = (len(train_dataloader) * epochs)
+		# TODO decide on if this is correct due to accumulator steps
+		total_train_steps = (len(train_dataloader) * epochs) // (args.batch_size // POSSIBLE_BATCH_SIZE)
 
 		# Create the learning rate scheduler.
 		# NOTE: num_warmup_steps = 0 is the Default value in run_glue.py
 		scheduler = get_linear_schedule_with_warmup(
 			optimizer,
-			num_warmup_steps=total_steps // 10,
-			num_training_steps=total_steps
+			num_warmup_steps=total_train_steps // 10,
+			num_training_steps=total_train_steps
 		)
 		# We'll store a number of quantities such as training and validation loss, 
 		# validation accuracy, and timings.
