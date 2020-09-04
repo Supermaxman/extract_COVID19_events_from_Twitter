@@ -29,6 +29,7 @@ import re
 import collections
 
 from utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, save_in_json, get_raw_scores, get_TP_FP_FN
+from hopfield import HopfieldPooling
 
 parser = argparse.ArgumentParser()
 
@@ -101,8 +102,13 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# )
 		# extra_size += 25
 		# We will create a dictionary of classifiers based on the number of subtasks
+		self.poolers = {
+			subtask:
+				HopfieldPooling(input_size=config.hidden_size)
+				for subtask in self.subtasks
+		}
 		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
-		# self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+		self.sub_modules = [self.classifiers]
 
 		self.init_weights()
 
@@ -181,7 +187,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		contextualized_embeddings = outputs[0]
 		# pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
 
-		pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
+		# pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
 
 		# pos_embeddings = self.positional_embeddings(entity_span_widths)
 
@@ -189,11 +195,15 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# DEBUG:
 		# print(pooled_output.shape)
 		# exit()
-
-		pooled_output = self.dropout(pooled_output)
+		logits = {}
+		for subtask in self.subtasks:
+			pooled_output = self.poolers[subtask](contextualized_embeddings)
+			pooled_output = self.dropout(pooled_output)
+			classifier_output = self.classifiers[subtask](pooled_output)
+			logits[subtask] = classifier_output
 		# Get logits for each subtask
 		# logits = self.classifier(pooled_output)
-		logits = {subtask: self.classifiers[subtask](pooled_output) for subtask in self.subtasks}
+		# logits = {subtask: self.classifiers[subtask](pooled_output) for subtask in self.subtasks}
 
 		outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
 
@@ -458,8 +468,10 @@ def main():
 		# exit()
 	model.to(device)
 	# Explicitly move the classifiers to device
-	for subtask, classifier in model.classifiers.items():
-		classifier.to(device)
+	for subtask in model.subtasks:
+		for sub_module in model.sub_modules:
+			sub_module[subtask].to(device)
+
 	entity_start_token_id = tokenizer.convert_tokens_to_ids(["<E>"])[0]
 	entity_end_token_id = tokenizer.convert_tokens_to_ids(["</E>"])[0]
 
