@@ -29,8 +29,8 @@ REDO_FLAG = True
 RETRAIN_FLAG = True
 # REDO_FLAG = False
 pre_model_name = 'bert'
-run_name = 'hopfield_pooled_pos'
-gpu_id = 4
+run_name = 'baseline'
+gpu_id = 5
 
 # We will save all the tasks and subtask's results and model configs in this dictionary
 all_task_results_and_model_configs = dict()

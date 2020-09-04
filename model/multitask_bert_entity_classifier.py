@@ -1,15 +1,7 @@
-from transformers import BertTokenizer, BertConfig
-from transformers import BertPreTrainedModel, BertModel
-
-from transformers import AdamW, get_linear_schedule_with_warmup
+from transformers import BertTokenizer, BertPreTrainedModel, BertModel, BertConfig, AdamW, get_linear_schedule_with_warmup
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 import torch
-from data_utils import COVID19TaskDataset, TokenizeCollator
-
-from hopfield import HopfieldPooling
-
-import numpy as np
 
 RANDOM_SEED = 901
 import random
@@ -31,14 +23,12 @@ import os
 from tqdm import tqdm
 import argparse
 import time
+import datetime
 import string
 import re
 import collections
 
-from utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, \
-	get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, \
-	log_data_statistics, save_in_json, get_raw_scores, get_TP_FP_FN, format_time
-
+from utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, save_in_json, get_raw_scores, get_TP_FP_FN
 
 parser = argparse.ArgumentParser()
 
@@ -50,10 +40,7 @@ parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the mod
 parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
 parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 # bert-base-cased
-# pre_models/biobert_v1.1_pubmed
-# https://github.com/digitalepidemiologylab/covid-twitter-bert
 parser.add_argument("-bm", "--bert_model", help="Bert model", type=str, default='pre_models/covid-twitter-bert')
-
 args = parser.parse_args()
 
 import logging
@@ -69,6 +56,7 @@ else:
 	logfile = os.path.join(args.output_dir, "output.log")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.FileHandler(logfile, mode='w'), logging.StreamHandler()])
 
+Q_TOKEN = "<Q_TARGET>"
 URL_TOKEN = "<URL>"
 RANDOM_SEED = 901
 torch.manual_seed(RANDOM_SEED)
@@ -82,45 +70,33 @@ else:
 	device = torch.device("cpu")
 	logging.info(f"Using CPU to train")
 
+def make_dir_if_not_exists(directory):
+	if not os.path.exists(directory):
+		logging.info("Creating new directory: {}".format(directory))
+		os.makedirs(directory)
+
+def format_time(elapsed):
+	'''
+	Takes a time in seconds and returns a string hh:mm:ss
+	'''
+	# Round to the nearest second.
+	elapsed_rounded = int(round((elapsed)))
+
+	# Format as hh:mm:ss
+	return str(datetime.timedelta(seconds=elapsed_rounded))
 
 class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 	def __init__(self, config):
 		super().__init__(config)
 		self.num_labels = config.num_labels
-		self.task = config.task
-
-		extra_size = 0
 
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-		# self.positional_embeddings = nn.Embedding(
-		# 	num_embeddings=100,
-		# 	embedding_dim=25
-		# )
 		self.subtasks = config.subtasks
-
-		self.poolers = {
-			subtask: HopfieldPooling(
-				input_size=config.hidden_size
-			)
-			for subtask in self.subtasks
-		}
-
-		self.positional_embeddings = {
-			subtask: nn.Embedding(
-				num_embeddings=100,
-				embedding_dim=25
-			)
-			for subtask in self.subtasks
-		}
-		extra_size += 25
-
 		# We will create a dictionary of classifiers based on the number of subtasks
-		self.classifiers = {
-			subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks
-		}
-		self.sub_modules = [self.poolers, self.positional_embeddings, self.classifiers]
+		self.classifiers = {subtask: nn.Linear(config.hidden_size, config.num_labels) for subtask in self.subtasks}
+		# self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
 		self.init_weights()
 
@@ -128,9 +104,6 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self,
 		input_ids,
 		entity_start_positions,
-		entity_end_positions,
-		entity_span_widths,
-		entity_span_masks,
 		attention_mask=None,
 		token_type_ids=None,
 		position_ids=None,
@@ -138,6 +111,46 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		inputs_embeds=None,
 		labels=None,
 	):
+		r"""
+		labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`, defaults to :obj:`None`):
+			Labels for computing the sequence classification/regression loss.
+			Indices should be in :obj:`[0, ..., config.num_labels - 1]`.
+			If :obj:`config.num_labels == 1` a regression loss is computed (Mean-Square loss),
+			If :obj:`config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+
+	Returns:
+		:obj:`tuple(torch.FloatTensor)` comprising various elements depending on the configuration (:class:`~transformers.BertConfig`) and inputs:
+		loss (:obj:`torch.FloatTensor` of shape :obj:`(1,)`, `optional`, returned when :obj:`label` is provided):
+			Classification (or regression if config.num_labels==1) loss.
+		logits (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, config.num_labels)`):
+			Classification (or regression if config.num_labels==1) scores (before SoftMax).
+		hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``config.output_hidden_states=True``):
+			Tuple of :obj:`torch.FloatTensor` (one for the output of the embeddings + one for the output of each layer)
+			of shape :obj:`(batch_size, sequence_length, hidden_size)`.
+
+			Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+		attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``config.output_attentions=True``):
+			Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape
+			:obj:`(batch_size, num_heads, sequence_length, sequence_length)`.
+
+			Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
+			heads.
+
+	Examples::
+
+		from transformers import BertTokenizer, BertForSequenceClassification
+		import torch
+
+		tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+		model = BertForSequenceClassification.from_pretrained('bert-base-uncased')
+
+		input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute", add_special_tokens=True)).unsqueeze(0)  # Batch size 1
+		labels = torch.tensor([1]).unsqueeze(0)  # Batch size 1
+		outputs = model(input_ids, labels=labels)
+
+		loss, logits = outputs[:2]
+
+		"""
 
 		outputs = self.bert(
 			input_ids,
@@ -156,38 +169,16 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		# NOTE: outputs[0] has all the hidden dimensions for the entire sequence
 		# We will extract the embeddings indexed with entity_start_positions
-		contextualized_embeddings = outputs[0]
+		pooled_output = outputs[0][entity_start_positions[:, 0], entity_start_positions[:, 1], :]
 
-		# [bsize, emb_size]
-		# pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
+		# DEBUG:
+		# print(pooled_output.shape)
+		# exit()
 
-		# [bsize, seq_len, emb_size]
-		# contextualized_embeddings
-		# [bsize, seq_len]
-		# entity_span_masks
-
-		# [bsize, emb_size]
-		# pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
-
-		# [bsize, emb_size]
-		# pooled_output = self.dropout(pooled_output)
-
-		# [bsize, p_emb_size]
-		# pos_embeddings = self.positional_embeddings(entity_span_widths)
-
-		# [bsize, total_emb_size]
-		# pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
+		pooled_output = self.dropout(pooled_output)
 		# Get logits for each subtask
-		logits = {}
-		for subtask in self.subtasks:
-			pooled_output = self.poolers[subtask](
-				input=contextualized_embeddings,
-				stored_pattern_padding_mask=entity_span_masks.bool()
-			)
-			pos_embeddings = self.positional_embeddings[subtask](entity_span_widths)
-			pooled_output = torch.cat((pooled_output, pos_embeddings), 1)
-			classifier_out = self.classifiers[subtask](pooled_output)
-			logits[subtask] = classifier_out
+		# logits = self.classifier(pooled_output)
+		logits = {subtask: self.classifiers[subtask](pooled_output) for subtask in self.subtasks}
 
 		outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
 
@@ -206,6 +197,130 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		return outputs  # (loss), logits, (hidden_states), (attentions)
 
+class COVID19TaskDataset(Dataset):
+	"""COVID19TaskDataset is a generic dataset class which will read data related to different questions"""
+	def __init__(self, instances):
+		super(COVID19TaskDataset, self).__init__()
+		self.instances = instances
+		self.nsamples = len(self.instances)
+
+	def __getitem__(self, index):
+		return self.instances[index]
+
+	def __len__(self):
+		return self.nsamples
+
+class TokenizeCollator():
+	def __init__(self, tokenizer, subtasks, entity_start_token_id):
+		self.tokenizer = tokenizer
+		self.subtasks = subtasks
+		self.entity_start_token_id = entity_start_token_id
+
+	def fix_user_mentions_in_tokenized_tweet(self, tokenized_tweet):
+		return ' '.join(["@USER" if word.startswith("@") else word for word in tokenized_tweet.split()])
+
+	def __call__(self, batch):
+		all_bert_model_input_texts = list()
+		gold_labels = {subtask: list() for subtask in self.subtasks}
+		# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
+		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:
+			tokenized_tweet_with_masked_chunk = self.fix_user_mentions_in_tokenized_tweet(tokenized_tweet_with_masked_chunk)
+			if chunk in ["AUTHOR OF THE TWEET", "NEAR AUTHOR OF THE TWEET"]:
+				# First element of the text will be considered as AUTHOR OF THE TWEET or NEAR AUTHOR OF THE TWEET
+				bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> </E>")
+				# print(tokenized_tweet_with_masked_chunk)
+				# print(bert_model_input_text)
+				# exit()
+			else:
+				bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> " + chunk + " </E>")
+			all_bert_model_input_texts.append(bert_model_input_text)
+			# Add subtask labels in the gold_labels dictionary
+			for subtask in self.subtasks:
+				gold_labels[subtask].append(subtask_labels_dict[subtask][1])
+		# Tokenize
+		all_bert_model_inputs_tokenized = self.tokenizer.batch_encode_plus(
+			all_bert_model_input_texts,
+			# pad_to_max_length=True,
+			padding=True,
+			return_tensors="pt"
+		)
+		input_ids, token_type_ids, attention_mask = all_bert_model_inputs_tokenized['input_ids'], all_bert_model_inputs_tokenized['token_type_ids'], all_bert_model_inputs_tokenized['attention_mask']
+		# print(input_ids.type())
+		# print(input_ids.size())
+		# print(input_ids)
+		# First extract the indices of <E> token in each sentence and save it in the batch
+		entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
+		# Also extract the gold labels
+		labels = {subtask: torch.LongTensor(subtask_gold_labels) for subtask, subtask_gold_labels in gold_labels.items()}
+		# print(len(batch))
+		if entity_start_positions.size(0) == 0:
+			# Send entity_start_positions to [CLS]'s position i.e. 0
+			entity_start_positions = torch.zeros(input_ids.size(0), 2).long()
+		# print(entity_start_positions)
+		# print(input_ids.size(), labels.size())
+
+		# Verify that the number of labels for each subtask is equal to the number of instances
+		for subtask in self.subtasks:
+			try:
+				assert input_ids.size(0) == labels[subtask].size(0)
+			except AssertionError:
+				logging.error(f"Error Bad batch: Incorrect number of labels given for the batch of size: {len(batch)}")
+				logging.error(f"{subtask}, {labels[subtask]}, {labels[subtask].size(0)}")
+				exit()
+		# assert input_ids.size(0) == labels.size(0)
+		return {"input_ids": input_ids, "entity_start_positions": entity_start_positions, "gold_labels": labels, "batch_data": batch}
+
+
+"""
+def _glue_convert_examples_to_features(
+	examples: List[InputExample],
+	tokenizer: PreTrainedTokenizer,
+	max_length: Optional[int] = None,
+	task=None,
+	label_list=None,
+	output_mode=None,
+):
+	if max_length is None:
+		max_length = tokenizer.max_len
+
+	if task is not None:
+		processor = glue_processors[task]()
+		if label_list is None:
+			label_list = processor.get_labels()
+			logging.info("Using label list %s for task %s" % (label_list, task))
+		if output_mode is None:
+			output_mode = glue_output_modes[task]
+			logging.info("Using output mode %s for task %s" % (output_mode, task))
+
+	label_map = {label: i for i, label in enumerate(label_list)}
+
+	def label_from_example(example: InputExample) -> Union[int, float]:
+		if output_mode == "classification":
+			return label_map[example.label]
+		elif output_mode == "regression":
+			return float(example.label)
+		raise KeyError(output_mode)
+
+	labels = [label_from_example(example) for example in examples]
+
+	batch_encoding = tokenizer.batch_encode_plus(
+		[(example.text_a, example.text_b) for example in examples], max_length=max_length, pad_to_max_length=True,
+	)
+
+	features = []
+	for i in range(len(examples)):
+		inputs = {k: batch_encoding[k][i] for k in batch_encoding}
+
+		feature = InputFeatures(**inputs, label=labels[i])
+		features.append(feature)
+
+	for i, example in enumerate(examples[:5]):
+		logging.info("*** Example ***")
+		logging.info("guid: %s" % (example.guid))
+		logging.info("features: %s" % features[i])
+
+	return features
+"""
 
 def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_flag = False):
 	# Create tqdm progressbar
@@ -225,13 +340,7 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 	with torch.no_grad():
 		for step, batch in enumerate(pbar):
 			# Create testing instance for model
-			input_dict = {
-				"input_ids": batch["input_ids"].to(device),
-				"entity_start_positions": batch["entity_start_positions"].to(device),
-				"entity_end_positions": batch["entity_end_positions"].to(device),
-				"entity_span_widths": batch["entity_span_widths"].to(device),
-				"entity_span_masks": batch["entity_span_masks"].to(device)
-			}
+			input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device)}
 			labels = batch["gold_labels"]
 			logits = model(**input_dict)[0]
 
@@ -240,13 +349,13 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 			# print(logits)
 			# print(type(logits))
 
-			# Apply softmax on each subtask's logits			
+			# Apply softmax on each subtask's logits
 			# softmax_logits = softmax_func(logits)
 			softmax_logits = {subtask: softmax_func(logits[subtask]) for subtask in subtasks}
-			
+
 			# DEBUG:
 			# print(softmax_logits)
-			
+
 			# Extract predicted labels and predicted scores for each subtask
 			# _, predicted_labels = softmax_logits.max(1)
 			# prediction_scores = softmax_logits[:, 1]
@@ -268,7 +377,6 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 			# print(predicted_labels)
 	return all_predictions, all_prediction_scores, all_labels
 
-
 def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
 	plt.cla()
 	plt.clf()
@@ -287,7 +395,6 @@ def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
 
 	fig.savefig(trajectory_file)
 
-
 def split_data_based_on_subtasks(data, subtasks):
 	# We will split the data into data_instances based on subtask_labels
 	subtasks_data = {subtask: list() for subtask in subtasks}
@@ -295,7 +402,6 @@ def split_data_based_on_subtasks(data, subtasks):
 		for subtask in subtasks:
 			subtasks_data[subtask].append((text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict[subtask][0], subtask_labels_dict[subtask][1]))
 	return subtasks_data
-
 
 def log_multitask_data_statistics(data, subtasks):
 	logging.info(f"Total instances in the data = {len(data)}")
@@ -308,7 +414,6 @@ def log_multitask_data_statistics(data, subtasks):
 		neg_counts[subtask] = len(data) - pos_counts[subtask]
 		logging.info(f"Subtask:{subtask:>15}\tPositive labels = {pos_counts[subtask]}\tNegative labels = {neg_counts[subtask]}")
 	return len(data), pos_counts, neg_counts
-
 
 def main():
 	# Read all the data instances
@@ -324,19 +429,14 @@ def main():
 		tokenizer = BertTokenizer.from_pretrained(args.bert_model)
 		config = BertConfig.from_pretrained(args.bert_model)
 		config.subtasks = subtasks_list
-		config.task = args.task
-
 		# print(config)
-		model = MultiTaskBertForCovidEntityClassification.from_pretrained(
-			args.bert_model,
-			config=config
-		)
+		model = MultiTaskBertForCovidEntityClassification.from_pretrained(args.bert_model, config=config)
 
 		# Add new tokens in tokenizer
 		new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>", "<URL>", "@USER"]}
 		# new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>"]}
 		tokenizer.add_special_tokens(new_special_tokens_dict)
-		
+
 		# Add the new embeddings in the weights
 		print("Embeddings type:", model.bert.embeddings.word_embeddings.weight.data.type())
 		print("Embeddings shape:", model.bert.embeddings.word_embeddings.weight.data.size())
@@ -362,15 +462,12 @@ def main():
 		# exit()
 	model.to(device)
 	# Explicitly move the classifiers to device
-	for sub_module in model.sub_modules:
-		for subtask in model.subtasks:
-			sub_module[subtask].to(device)
-
+	for subtask, classifier in model.classifiers.items():
+		classifier.to(device)
 	entity_start_token_id = tokenizer.convert_tokens_to_ids(["<E>"])[0]
-	entity_end_token_id = tokenizer.convert_tokens_to_ids(["</E>"])[0]
 
 	logging.info(f"Task dataset for task: {args.task} loaded from {args.data_file}.")
-	
+
 	model_config = dict()
 	results = dict()
 
@@ -387,7 +484,7 @@ def main():
 	model_config["train_data"] = {"size":total_train_size, "pos":pos_subtasks_train_size, "neg":neg_subtasks_train_size}
 	model_config["dev_data"] = {"size":total_dev_size, "pos":pos_subtasks_dev_size, "neg":neg_subtasks_dev_size}
 	model_config["test_data"] = {"size":total_test_size, "pos":pos_subtasks_test_size, "neg":neg_subtasks_test_size}
-	
+
 	# Extract subtasks data for dev and test
 	dev_subtasks_data = split_data_based_on_subtasks(dev_data, model.subtasks)
 	test_subtasks_data = split_data_based_on_subtasks(test_data, model.subtasks)
@@ -398,7 +495,7 @@ def main():
 	test_dataset = COVID19TaskDataset(test_data)
 	logging.info("Loaded the datasets into Pytorch datasets")
 
-	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id)
+	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id)
 	train_dataloader = DataLoader(train_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=True, num_workers=0, collate_fn=tokenize_collator)
 	dev_dataloader = DataLoader(dev_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
 	test_dataloader = DataLoader(test_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
@@ -408,11 +505,11 @@ def main():
 	if args.retrain:
 		##################################################################################################
 		# NOTE: Training Tutorial Reference
-		# https://mccormickml.com/2019/07/22/BERT-fine-tuning/#41-bertforsequenceclassification	
+		# https://mccormickml.com/2019/07/22/BERT-fine-tuning/#41-bertforsequenceclassification
 		##################################################################################################
 
 		# Create an optimizer training schedule for the BERT text classification model
-		# NOTE: AdamW is a class from the huggingface library (as opposed to pytorch) 
+		# NOTE: AdamW is a class from the huggingface library (as opposed to pytorch)
 		# I believe the 'W' stands for 'Weight Decay fix"
 		# Recommended Schedule for BERT fine-tuning as per the paper
 		# Batch size: 16, 32
@@ -420,19 +517,19 @@ def main():
 		# Number of epochs: 2, 3, 4
 		optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8)
 		logging.info("Created model optimizer")
-		# Number of training epochs. The BERT authors recommend between 2 and 4. 
+		# Number of training epochs. The BERT authors recommend between 2 and 4.
 		# We chose to run for 4, but we'll see later that this may be over-fitting the
 		# training data.
 		epochs = args.n_epochs
 
-		# Total number of training steps is [number of batches] x [number of epochs]. 
+		# Total number of training steps is [number of batches] x [number of epochs].
 		# (Note that this is not the same as the number of training samples).
 		total_steps = len(train_dataloader) * epochs
 
 		# Create the learning rate scheduler.
 		# NOTE: num_warmup_steps = 0 is the Default value in run_glue.py
 		scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
-		# We'll store a number of quantities such as training and validation loss, 
+		# We'll store a number of quantities such as training and validation loss,
 		# validation accuracy, and timings.
 		training_stats = []
 
@@ -466,17 +563,16 @@ def main():
 				for subtask in model.subtasks:
 					subtask_labels = batch["gold_labels"][subtask]
 					subtask_labels = subtask_labels.to(device)
+					# print("HAHAHAHAH:", subtask_labels.is_cuda)
 					batch["gold_labels"][subtask] = subtask_labels
+					# print("HAHAHAHAH:", batch["gold_labels"][subtask].is_cuda)
 				# Forward
-				input_dict = {
-					"input_ids": batch["input_ids"].to(device),
-					"entity_start_positions": batch["entity_start_positions"].to(device),
-					"entity_end_positions": batch["entity_end_positions"].to(device),
-					"entity_span_widths": batch["entity_span_widths"].to(device),
-					"entity_span_masks": batch["entity_span_masks"].to(device),
-					"labels": batch["gold_labels"]
-				}
+				input_dict = {"input_ids": batch["input_ids"].to(device), "entity_start_positions": batch["entity_start_positions"].to(device), "labels": batch["gold_labels"]}
 
+				input_ids = batch["input_ids"]
+				entity_start_positions = batch["entity_start_positions"]
+				gold_labels = batch["gold_labels"]
+				batch_data = batch["batch_data"]
 				loss, logits = model(**input_dict)
 				# loss = loss / accumulation_steps
 				# Accumulate loss
@@ -484,9 +580,9 @@ def main():
 
 				# Backward: compute gradients
 				loss.backward()
-				
+
 				if (step + 1) % accumulation_steps == 0:
-					
+
 					# Calculate elapsed time in minutes and print loss on the tqdm bar
 					elapsed = format_time(time.time() - start_time)
 					avg_train_loss = total_train_loss/(step+1)
@@ -521,12 +617,20 @@ def main():
 						logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN:.0f}\tF1={dev_F1:.4f}\tP={dev_P:.4f}\tR={dev_R:.4f}\tTP={dev_TP:.0f}\tFP={dev_FP:.0f}\tFN={dev_FN:.0f}")
 						dev_subtasks_validation_statistics[subtask].append((epoch + 1, step + 1, dev_TP + dev_FN, dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN))
 
+					# logging.info("DEBUG:Validation on Test")
+					# dev_predicted_labels, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task + "_dev", True)
+					# for subtask in model.subtasks:
+					# 	dev_subtask_data = test_subtasks_data[subtask]
+					# 	dev_subtask_prediction_scores = dev_prediction_scores[subtask]
+					# 	dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores)
+					# 	logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN}\tF1={dev_F1}\tP={dev_P}\tR={dev_R}\tTP={dev_TP}\tFP={dev_FP}\tFN={dev_FN}")
+					# 	dev_subtasks_validation_statistics[subtask].append((epoch + 1, step + 1, dev_TP + dev_FN, dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN))
 					# Put the model back in train setting
 					model.train()
 
 			# Calculate the average loss over all of the batches.
 			avg_train_loss = total_train_loss / len(train_dataloader)
-			
+
 			training_time = format_time(time.time() - start_time)
 
 			# Record all statistics from this epoch.
@@ -540,7 +644,7 @@ def main():
 
 		logging.info(f"Training complete with total Train time:{format_time(time.time()- total_start_time)}")
 		log_list(training_stats)
-		
+
 		# Save the model and the Tokenizer here:
 		logging.info(f"Saving the model and tokenizer in {args.save_directory}")
 		model.save_pretrained(args.save_directory)
@@ -576,8 +680,21 @@ def main():
 	best_dev_F1s = {subtask: 0.0 for subtask in model.subtasks}
 	test_subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
 	dev_subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
+	# for subtask in model.subtasks:
+	# 	test_subtask_data = test_subtasks_data[subtask]
+	# 	test_subtask_prediction_scores = test_prediction_scores[subtask]
+	# 	for t in thresholds:
+	# 		test_F1, test_P, test_R, test_TP, test_FP, test_FN = get_TP_FP_FN(test_subtask_data, test_subtask_prediction_scores, THRESHOLD=t)
+	# 		test_subtasks_t_F1_P_Rs[subtask].append((t, test_F1, test_P, test_R, test_TP + test_FN, test_TP, test_FP, test_FN))
+	# 		if test_F1 > best_test_F1s[subtask]:
+	# 			best_test_thresholds[subtask] = t
+	# 			best_test_F1s[subtask] = test_F1
 
-	for subtask in model.subtasks:	
+	# 	logging.info(f"Subtask:{subtask:>15}")
+	# 	log_list(test_subtasks_t_F1_P_Rs[subtask])
+	# 	logging.info(f"Best Test Threshold for subtask: {best_test_thresholds[subtask]}\t Best test F1: {best_test_F1s[subtask]}")
+
+	for subtask in model.subtasks:
 		dev_subtask_data = dev_subtasks_data[subtask]
 		dev_subtask_prediction_scores = dev_prediction_scores[subtask]
 		for t in thresholds:
@@ -601,8 +718,8 @@ def main():
 	# test_predicted_labels, test_prediction_scores, test_gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task)
 
 	predicted_labels, prediction_scores, gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task)
-	
-	# Test 
+
+	# Test
 	for subtask in model.subtasks:
 		logging.info(f"Testing the trained classifier on subtask: {subtask}")
 		# print(len(test_dataloader))
@@ -651,6 +768,29 @@ def main():
 		N = TP + FN
 		results[subtask]["N"] = N
 
+		# # Top predictions in the Test case
+		# prediction_scores[subtask] = np.array(prediction_scores[subtask])
+		# sorted_prediction_ids = np.argsort(-prediction_scores[subtask])
+		# K = 200
+		# logging.info("Top {} predictions:".format(K))
+		# logging.info("\t".join(["Tweet", "BERT model input", "candidate chunk", "prediction score", "predicted label", "gold label", "gold chunks"]))
+		# for i in range(K):
+		# 	instance_id = sorted_prediction_ids[i]
+		# 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
+		# 	tweet = test_subtasks_data[subtask][instance_id][0].replace("\n", " ")
+		# 	chunk = test_subtasks_data[subtask][instance_id][1]
+		# 	tokenized_tweet_with_masked_chunk = test_subtasks_data[subtask][instance_id][6]
+		# 	if chunk in ["AUTHOR OF THE TWEET", "NEAR AUTHOR OF THE TWEET"]:
+		# 		# First element of the text will be considered as AUTHOR OF THE TWEET or NEAR AUTHOR OF THE TWEET
+		# 		bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> </E>")
+		# 		# print(tokenized_tweet_with_masked_chunk)
+		# 		# print(bert_model_input_text)
+		# 		# exit()
+		# 	else:
+		# 		bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> " + chunk + " </E>")
+		# 	list_to_print = [tweet, bert_model_input_text, chunk, str(prediction_scores[subtask][instance_id]), str(predicted_labels[subtask][instance_id]), str(test_subtasks_data[subtask][instance_id][-1]), str(test_subtasks_data[subtask][instance_id][-2])]
+		# 	logging.info("\t".join(list_to_print))
+
 	# Save model_config and results
 	model_config_file = os.path.join(args.output_dir, "model_config.json")
 	results_file = os.path.join(args.output_dir, "results.json")
@@ -659,6 +799,10 @@ def main():
 	logging.info(f"Saving results at {results_file}")
 	save_in_json(results, results_file)
 
-
+	# if args.save_figure_file:
+	# 	# Plot the precision recall curve
+	# 	disp = plot_precision_recall_curve(lr, test_X, test_Y)
+	# 	disp.ax_.set_title('2-class Precision-Recall curve')
+	# 	disp.ax_.figure.savefig(args.save_figure_file)
 if __name__ == '__main__':
 	main()
