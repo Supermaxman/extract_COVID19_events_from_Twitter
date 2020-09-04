@@ -41,7 +41,8 @@ parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model
 parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 args = parser.parse_args()
 
-pre_model_name = 'bert-base-cased'
+# pre_model_name = 'bert-base-cased'
+pre_model_name = 'covid-twitter-bert'
 
 import logging
 # Ref: https://stackoverflow.com/a/49202811/4535284
@@ -609,7 +610,7 @@ def main():
 						dev_subtask_data = dev_subtasks_data[subtask]
 						dev_subtask_prediction_scores = dev_prediction_scores[subtask]
 						dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores)
-						logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN}\tF1={dev_F1}\tP={dev_P}\tR={dev_R}\tTP={dev_TP}\tFP={dev_FP}\tFN={dev_FN}")
+						logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN}\tF1={dev_F1:.4f}\tP={dev_P:.4f}\tR={dev_R:.4f}\tTP={dev_TP}\tFP={dev_FP}\tFN={dev_FN}")
 						dev_subtasks_validation_statistics[subtask].append((epoch + 1, step + 1, dev_TP + dev_FN, dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN))
 
 					# logging.info("DEBUG:Validation on Test")
@@ -732,15 +733,15 @@ def main():
 		EM_score, F1_score, total = get_raw_scores(test_subtasks_data[subtask], prediction_scores[subtask])
 		logging.info("Word overlap based SQuAD evaluation style metrics:")
 		logging.info(f"Total number of cases: {total}")
-		logging.info(f"EM_score: {EM_score}")
-		logging.info(f"F1_score: {F1_score}")
+		logging.info(f"EM_score: {EM_score:.4f}")
+		logging.info(f"F1_score: {F1_score:.4f}")
 		results[subtask]["SQuAD_EM"] = EM_score
 		results[subtask]["SQuAD_F1"] = F1_score
 		results[subtask]["SQuAD_total"] = total
 		pos_EM_score, pos_F1_score, pos_total = get_raw_scores(test_subtasks_data[subtask], prediction_scores[subtask], positive_only=True)
 		logging.info(f"Total number of Positive cases: {pos_total}")
-		logging.info(f"Pos. EM_score: {pos_EM_score}")
-		logging.info(f"Pos. F1_score: {pos_F1_score}")
+		logging.info(f"Pos. EM_score: {pos_EM_score:.4f}")
+		logging.info(f"Pos. F1_score: {pos_F1_score:.4f}")
 		results[subtask]["SQuAD_Pos. EM"] = pos_EM_score
 		results[subtask]["SQuAD_Pos. F1"] = pos_F1_score
 		results[subtask]["SQuAD_Pos. EM_F1_total"] = pos_total
@@ -748,9 +749,9 @@ def main():
 		# New evaluation suggested by Alan
 		F1, P, R, TP, FP, FN = get_TP_FP_FN(test_subtasks_data[subtask], prediction_scores[subtask], THRESHOLD=best_dev_thresholds[subtask])
 		logging.info("New evaluation scores:")
-		logging.info(f"F1: {F1}")
-		logging.info(f"Precision: {P}")
-		logging.info(f"Recall: {R}")
+		logging.info(f"F1: {F1:.4f}")
+		logging.info(f"Precision: {P:.4f}")
+		logging.info(f"Recall: {R:.4f}")
 		logging.info(f"True Positive: {TP}")
 		logging.info(f"False Positive: {FP}")
 		logging.info(f"False Negative: {FN}")
