@@ -42,7 +42,7 @@ parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, defau
 args = parser.parse_args()
 
 # pre_model_name = 'bert-base-cased'
-pre_model_name = 'covid-twitter-bert'
+pre_model_name = 'pre_models/covid-twitter-bert'
 
 import logging
 # Ref: https://stackoverflow.com/a/49202811/4535284
