@@ -3,18 +3,16 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 import torch
 
-RANDOM_SEED = 901
+Q_TOKEN = "<Q_TARGET>"
+URL_TOKEN = "<url>"
+POSSIBLE_BATCH_SIZE = 8
+RANDOM_SEED = 0
 import random
 random.seed(RANDOM_SEED)
 
 import numpy as np
-from collections import Counter
-import pickle
-from pprint import pprint
 
 from sklearn import metrics
-from sklearn.metrics import precision_recall_curve
-from sklearn.metrics import plot_precision_recall_curve
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -24,9 +22,6 @@ from tqdm import tqdm
 import argparse
 import time
 import datetime
-import string
-import re
-import collections
 
 from utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, save_in_json, get_raw_scores, get_TP_FP_FN
 from hopfield import HopfieldPooling
@@ -62,11 +57,8 @@ else:
 	logfile = os.path.join(args.output_dir, "output.log")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.FileHandler(logfile, mode='w'), logging.StreamHandler()])
 
-Q_TOKEN = "<Q_TARGET>"
-URL_TOKEN = "<URL>"
-RANDOM_SEED = 901
 torch.manual_seed(RANDOM_SEED)
-POSSIBLE_BATCH_SIZE = 8
+np.random.seed(RANDOM_SEED)
 
 # export CUDA_VISIBLE_DEVICES=3
 if torch.cuda.is_available():
@@ -227,7 +219,8 @@ class TokenizeCollator():
 		self.entity_start_token_id = entity_start_token_id
 		self.entity_end_token_id = entity_end_token_id
 
-	def fix_user_mentions_in_tokenized_tweet(self, tokenized_tweet):
+	@staticmethod
+	def fix_user_mentions_in_tokenized_tweet(tokenized_tweet):
 		if 'twitter' in pre_model_name:
 			replace_txt = '@<user>'
 		else:
@@ -241,8 +234,10 @@ class TokenizeCollator():
 	def __call__(self, batch):
 		all_bert_model_input_texts = list()
 		gold_labels = {subtask: list() for subtask in self.subtasks}
-		# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:
+		# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id ::
+		# tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
+		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, \
+				tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:
 			tokenized_tweet_with_masked_chunk = self.fix_user_mentions_in_tokenized_tweet(tokenized_tweet_with_masked_chunk)
 			if chunk in ["AUTHOR OF THE TWEET", "NEAR AUTHOR OF THE TWEET"]:
 				# First element of the text will be considered as AUTHOR OF THE TWEET or NEAR AUTHOR OF THE TWEET
@@ -321,7 +316,7 @@ def create_mask(start_indices, end_indices, seq_len):
 	return mask
 
 
-def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_flag = False):
+def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_flag=False, has_labels=True):
 	# Create tqdm progressbar
 	if dev_flag:
 		pbar = dataloader
@@ -347,26 +342,12 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 				"entity_span_masks": batch["entity_span_masks"].to(device),
 				"attention_mask": batch["attention_mask"].to(device)
 			}
-			labels = batch["gold_labels"]
+			if has_labels:
+				labels = batch["gold_labels"]
 			logits = model(**input_dict)[0]
 
-			# DEBUG:
-			# print(labels)
-			# print(logits)
-			# print(type(logits))
-
-			# Apply softmax on each subtask's logits			
-			# softmax_logits = softmax_func(logits)
 			softmax_logits = {subtask: softmax_func(logits[subtask]) for subtask in subtasks}
-			
-			# DEBUG:
-			# print(softmax_logits)
-			
-			# Extract predicted labels and predicted scores for each subtask
-			# _, predicted_labels = softmax_logits.max(1)
-			# prediction_scores = softmax_logits[:, 1]
-			# prediction_scores = prediction_scores.cpu().tolist()
-			# predicted_labels = predicted_labels.cpu().tolist()
+
 			predicted_labels = {subtask: None for subtask in subtasks}
 			prediction_scores = {subtask: None for subtask in subtasks}
 			for subtask in subtasks:
@@ -377,10 +358,9 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 				# Save all the predictions and labels in lists
 				all_predictions[subtask].extend(predicted_labels[subtask])
 				all_prediction_scores[subtask].extend(prediction_scores[subtask])
-				all_labels[subtask].extend(labels[subtask])
-			# DEBUG:
-			# print(prediction_scores)
-			# print(predicted_labels)
+				if has_labels:
+					all_labels[subtask].extend(labels[subtask])
+
 	return all_predictions, all_prediction_scores, all_labels
 
 
@@ -704,7 +684,6 @@ def main():
 
 	# Evaluate on Test
 	logging.info("Testing on test dataset")
-	# test_predicted_labels, test_prediction_scores, test_gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task)
 
 	predicted_labels, prediction_scores, gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task)
 	
