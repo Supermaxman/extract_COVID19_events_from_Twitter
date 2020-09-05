@@ -111,7 +111,12 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 			extra_size += 25
 		self.subtasks = config.subtasks
 		# We will create a dictionary of classifiers based on the number of subtasks
-		self.classifiers = {subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels) for subtask in self.subtasks}
+		self.classifiers = nn.ModuleDict(
+			{
+				subtask: nn.Linear(config.hidden_size + extra_size, config.num_labels)
+				for subtask in self.subtasks
+			}
+		)
 		# self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
 		self.init_weights()
@@ -245,8 +250,15 @@ class TokenizeCollator():
 			for subtask in self.subtasks:
 				gold_labels[subtask].append(subtask_labels_dict[subtask][1])
 		# Tokenize
-		all_bert_model_inputs_tokenized = self.tokenizer.batch_encode_plus(all_bert_model_input_texts, pad_to_max_length=True, return_tensors="pt")
-		input_ids, token_type_ids, attention_mask = all_bert_model_inputs_tokenized['input_ids'], all_bert_model_inputs_tokenized['token_type_ids'], all_bert_model_inputs_tokenized['attention_mask']
+		all_bert_model_inputs_tokenized = self.tokenizer.batch_encode_plus(
+			all_bert_model_input_texts,
+			pad_to_max_length=True,
+			return_tensors="pt"
+		)
+
+		input_ids, token_type_ids, attention_mask = all_bert_model_inputs_tokenized['input_ids'], \
+																							all_bert_model_inputs_tokenized['token_type_ids'], \
+																							all_bert_model_inputs_tokenized['attention_mask']
 		# print(input_ids.type())
 		# print(input_ids.size())
 		# print(input_ids)
@@ -284,6 +296,7 @@ class TokenizeCollator():
 			"entity_end_positions": entity_end_positions,
 			"entity_span_widths": entity_span_widths,
 			"entity_span_masks": entity_span_masks,
+			"attention_mask": attention_mask,
 			"gold_labels": labels,
 			"batch_data": batch
 		}
@@ -322,7 +335,8 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 				"entity_start_positions": batch["entity_start_positions"].to(device),
 				"entity_end_positions": batch["entity_end_positions"].to(device),
 				"entity_span_widths": batch["entity_span_widths"].to(device),
-				"entity_span_masks": batch["entity_span_masks"].to(device)
+				"entity_span_masks": batch["entity_span_masks"].to(device),
+				"attention_mask": batch["attention_mask"].to(device)
 			}
 			labels = batch["gold_labels"]
 			logits = model(**input_dict)[0]
@@ -442,17 +456,8 @@ def main():
 		# Load the tokenizer and model from the save_directory
 		tokenizer = BertTokenizer.from_pretrained(args.save_directory)
 		model = MultiTaskBertForCovidEntityClassification.from_pretrained(args.save_directory)
-		# print(model.state_dict().keys())
-		# TODO save and load the subtask classifier weights separately
-		# Load from individual state dicts
-		for subtask in model.subtasks:
-			model.classifiers[subtask].load_state_dict(torch.load(os.path.join(args.save_directory, f"{subtask}_classifier.bin")))
-		# print(model.config)
-		# exit()
 	model.to(device)
-	# Explicitly move the classifiers to device
-	for subtask, classifier in model.classifiers.items():
-		classifier.to(device)
+
 	entity_start_token_id = tokenizer.convert_tokens_to_ids(["<E>"])[0]
 	entity_end_token_id = tokenizer.convert_tokens_to_ids(["</E>"])[0]
 
@@ -486,7 +491,7 @@ def main():
 	logging.info("Loaded the datasets into Pytorch datasets")
 
 	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id)
-	train_dataloader = DataLoader(train_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=True, num_workers=0, collate_fn=tokenize_collator)
+	train_dataloader = DataLoader(train_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=True, num_workers=1, collate_fn=tokenize_collator)
 	dev_dataloader = DataLoader(dev_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
 	test_dataloader = DataLoader(test_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
 	logging.info("Created train and test dataloaders with batch aggregation")
@@ -552,7 +557,7 @@ def main():
 			start_time = time.time()
 			model.train()
 
-			dev_log_frequency = 5
+			dev_log_frequency = 1
 			n_steps = len(train_dataloader)
 			dev_steps = int(n_steps / dev_log_frequency)
 			for step, batch in enumerate(pbar):
@@ -570,6 +575,7 @@ def main():
 					"entity_end_positions": batch["entity_end_positions"].to(device),
 					"entity_span_widths": batch["entity_span_widths"].to(device),
 					"entity_span_masks": batch["entity_span_masks"].to(device),
+					"attention_mask": batch["attention_mask"].to(device),
 					"labels": batch["gold_labels"]
 				}
 
@@ -617,14 +623,6 @@ def main():
 						logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN}\tF1={dev_F1:.4f}\tP={dev_P:.4f}\tR={dev_R:.4f}\tTP={dev_TP}\tFP={dev_FP}\tFN={dev_FN}")
 						dev_subtasks_validation_statistics[subtask].append((epoch + 1, step + 1, dev_TP + dev_FN, dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN))
 
-					# logging.info("DEBUG:Validation on Test")
-					# dev_predicted_labels, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task + "_dev", True)
-					# for subtask in model.subtasks:
-					# 	dev_subtask_data = test_subtasks_data[subtask]
-					# 	dev_subtask_prediction_scores = dev_prediction_scores[subtask]
-					# 	dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores)
-					# 	logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN}\tF1={dev_F1}\tP={dev_P}\tR={dev_R}\tTP={dev_TP}\tFP={dev_FP}\tFN={dev_FN}")
-					# 	dev_subtasks_validation_statistics[subtask].append((epoch + 1, step + 1, dev_TP + dev_FN, dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN))
 					# Put the model back in train setting
 					model.train()
 
@@ -648,11 +646,6 @@ def main():
 		# Save the model and the Tokenizer here:
 		logging.info(f"Saving the model and tokenizer in {args.save_directory}")
 		model.save_pretrained(args.save_directory)
-		# Save each subtask classifiers weights to individual state dicts
-		for subtask, classifier in model.classifiers.items():
-			classifier_save_file = os.path.join(args.save_directory, f"{subtask}_classifier.bin")
-			logging.info(f"Saving the model's {subtask} classifier weights at {classifier_save_file}")
-			torch.save(classifier.state_dict(), classifier_save_file)
 		tokenizer.save_pretrained(args.save_directory)
 
 		# Plot the train loss trajectory in a plot
