@@ -29,6 +29,8 @@ import re
 import collections
 
 from utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, save_in_json, get_raw_scores, get_TP_FP_FN
+from hopfield import HopfieldPooling
+
 import json
 
 parser = argparse.ArgumentParser()
@@ -99,6 +101,11 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+		pooling_type = model_flags['pooling_type'].lower()
+		if pooling_type == 'span_hopfield_single_pool':
+			self.pooler = HopfieldPooling(input_size=config.hidden_size)
+
 		extra_size = 0
 		width_embeddings = model_flags['width_embeddings'].lower()
 		if width_embeddings == 'none':
@@ -159,8 +166,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 			pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
 		elif pooling_type == 'span_max_pool':
 			pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
-		elif pooling_type == 'span_attention_pool':
-			raise NotImplementedError()
+		elif pooling_type == 'span_hopfield_single_pool':
+			pooled_output = self.pooler(contextualized_embeddings, stored_pattern_padding_mask=entity_span_masks)
 		else:
 			raise ValueError(f'Unknown pooling_type: {pooling_type}')
 		# DEBUG:
