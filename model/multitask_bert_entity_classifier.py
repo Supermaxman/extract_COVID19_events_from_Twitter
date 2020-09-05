@@ -167,7 +167,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		elif pooling_type == 'span_max_pool':
 			pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
 		elif pooling_type == 'span_hopfield_single_pool':
-			pooled_output = self.pooler(contextualized_embeddings, stored_pattern_padding_mask=entity_span_masks)
+			pooled_output = self.pooler(contextualized_embeddings, stored_pattern_padding_mask=entity_span_masks.bool())
 		else:
 			raise ValueError(f'Unknown pooling_type: {pooling_type}')
 		# DEBUG:
@@ -272,8 +272,8 @@ class TokenizeCollator():
 		# First extract the indices of <E> token in each sentence and save it in the batch
 
 		# entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
-		entity_start_positions = torch.nonzero((input_ids == self.entity_start_token_id))
-		entity_end_positions = torch.nonzero((input_ids == self.entity_end_token_id))
+		entity_start_positions = torch.nonzero((input_ids == self.entity_start_token_id), as_tuple=False)
+		entity_end_positions = torch.nonzero((input_ids == self.entity_end_token_id), as_tuple=False)
 		# width of span within <E> ... </E>
 		entity_span_widths = entity_end_positions[:, 1] - entity_start_positions[:, 1] - 1
 		entity_span_widths = torch.clamp(entity_span_widths, 0, 100)
@@ -629,7 +629,7 @@ def main():
 						dev_subtask_data = dev_subtasks_data[subtask]
 						dev_subtask_prediction_scores = dev_prediction_scores[subtask]
 						dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores)
-						logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN}\tF1={dev_F1:.4f}\tP={dev_P:.4f}\tR={dev_R:.4f}\tTP={dev_TP}\tFP={dev_FP}\tFN={dev_FN}")
+						logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN:.0f}\tF1={dev_F1:.4f}\tP={dev_P:.4f}\tR={dev_R:.4f}\tTP={dev_TP:.0f}\tFP={dev_FP:.0f}\tFN={dev_FN:.0f}")
 						dev_subtasks_validation_statistics[subtask].append((epoch + 1, step + 1, dev_TP + dev_FN, dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN))
 
 					# Put the model back in train setting
@@ -745,9 +745,9 @@ def main():
 		logging.info(f"F1: {F1:.4f}")
 		logging.info(f"Precision: {P:.4f}")
 		logging.info(f"Recall: {R:.4f}")
-		logging.info(f"True Positive: {TP}")
-		logging.info(f"False Positive: {FP}")
-		logging.info(f"False Negative: {FN}")
+		logging.info(f"True Positive: {TP:.0f}")
+		logging.info(f"False Positive: {FP:.0f}")
+		logging.info(f"False Negative: {FN:.0f}")
 		results[subtask]["F1"] = F1
 		results[subtask]["P"] = P
 		results[subtask]["R"] = R
