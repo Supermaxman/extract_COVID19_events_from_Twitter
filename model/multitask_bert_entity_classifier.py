@@ -382,6 +382,7 @@ def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
 
 	fig.savefig(trajectory_file)
 
+
 def split_data_based_on_subtasks(data, subtasks):
 	# We will split the data into data_instances based on subtask_labels
 	subtasks_data = {subtask: list() for subtask in subtasks}
@@ -389,6 +390,7 @@ def split_data_based_on_subtasks(data, subtasks):
 		for subtask in subtasks:
 			subtasks_data[subtask].append((text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict[subtask][0], subtask_labels_dict[subtask][1]))
 	return subtasks_data
+
 
 def log_multitask_data_statistics(data, subtasks):
 	logging.info(f"Total instances in the data = {len(data)}")
