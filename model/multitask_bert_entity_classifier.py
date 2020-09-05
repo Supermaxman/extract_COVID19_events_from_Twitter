@@ -263,8 +263,10 @@ class TokenizeCollator():
 		# print(input_ids.size())
 		# print(input_ids)
 		# First extract the indices of <E> token in each sentence and save it in the batch
-		entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
-		entity_end_positions = (input_ids == self.entity_end_token_id).nonzero()
+
+		# entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
+		entity_start_positions = torch.nonzero((input_ids == self.entity_start_token_id))
+		entity_end_positions = torch.nonzero((input_ids == self.entity_end_token_id))
 		# width of span within <E> ... </E>
 		entity_span_widths = entity_end_positions[:, 1] - entity_start_positions[:, 1] - 1
 		entity_span_widths = torch.clamp(entity_span_widths, 0, 100)
