@@ -252,7 +252,7 @@ class TokenizeCollator():
 		# Tokenize
 		all_bert_model_inputs_tokenized = self.tokenizer.batch_encode_plus(
 			all_bert_model_input_texts,
-			pad_to_max_length=True,
+			padding=True,
 			return_tensors="pt"
 		)
 
