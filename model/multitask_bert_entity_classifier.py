@@ -126,6 +126,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 				embedding_dim=25
 			)
 			extra_size += 25
+		if model_flags['cls']:
+			extra_size += config.hidden_size
 		# We will create a dictionary of classifiers based on the number of subtasks
 		self.classifiers = nn.ModuleDict(
 			{
@@ -183,6 +185,11 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 				if width_embedding_type == 'single_width':
 					pooled_output = torch.cat((pooled_output, width_embeddings), 1)
 
+				if model_flags['cls']:
+					cls_output = contextualized_embeddings[:, 0]
+					cls_output = self.dropout(cls_output)
+					pooled_output = torch.cat((pooled_output, cls_output), 1)
+
 				logits[subtask] = self.classifiers[subtask](pooled_output)
 		else:
 			if pooling_type == 'head':
@@ -202,6 +209,11 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 			if width_embedding_type == 'single_width':
 				pooled_output = torch.cat((pooled_output, width_embeddings), 1)
+
+				if model_flags['cls']:
+					cls_output = contextualized_embeddings[:, 0]
+					cls_output = self.dropout(cls_output)
+					pooled_output = torch.cat((pooled_output, cls_output), 1)
 
 			# Get logits for each subtask
 			# logits = self.classifier(pooled_output)
