@@ -1,0 +1,5 @@
+configs/*
+data/*
+private/*
+results/*
+saved_models/*
