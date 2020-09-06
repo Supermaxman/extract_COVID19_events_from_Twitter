@@ -99,7 +99,10 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		pooling_type = model_flags['pooling_type'].lower()
 		if pooling_type == 'span_hopfield_single_pool':
-			self.pooler = HopfieldPooling(input_size=config.hidden_size)
+			self.pooler = HopfieldPooling(
+				input_size=config.hidden_size,
+				update_steps_max=model_flags['hopfield_update_steps']
+			)
 
 		elif pooling_type == 'hopfield_pool':
 			self.pooler = nn.ModuleDict(
@@ -194,9 +197,9 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 			elif pooling_type == 'span_max_pool':
 				pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
 			elif pooling_type == 'span_hopfield_single_pool':
-				# masks used are inverted, aka ignored values should be True
 				pooled_output = self.pooler(
 					contextualized_embeddings,
+					# masks used are inverted, aka ignored values should be True
 					stored_pattern_padding_mask=~entity_span_masks.bool()
 				)
 			else:
