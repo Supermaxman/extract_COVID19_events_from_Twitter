@@ -102,7 +102,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		if pooling_type == 'span_hopfield_single_pool':
 			self.pooler = HopfieldPooling(
 				input_size=config.hidden_size,
-				update_steps_max=model_flags['hopfield_update_steps']
+				update_steps_max=model_flags['hopfield_update_steps'],
+				dropout=model_flags['hopfield_dropout']
 			)
 
 		elif pooling_type == 'hopfield_pool':
@@ -110,7 +111,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 				{
 					subtask: HopfieldPooling(
 						input_size=config.hidden_size,
-						update_steps_max=model_flags['hopfield_update_steps']
+						update_steps_max=model_flags['hopfield_update_steps'],
+						dropout=model_flags['hopfield_dropout']
 					)
 					for subtask in self.subtasks
 				}
@@ -676,9 +678,20 @@ def main():
 						FP += dev_FP
 						FN += dev_FN
 
-					micro_p = TP / (TP + FP)
-					micro_r = TP / (TP + FN)
-					micro_f1 = 2.0 * ((micro_p * micro_r) / (micro_p + micro_r))
+					if TP + FP == 0:
+						micro_p = 0.0
+					else:
+						micro_p = TP / (TP + FP)
+
+					if TP + FN == 0:
+						micro_r = 0.0
+					else:
+						micro_r = TP / (TP + FN)
+
+					if micro_p == 0.0 and micro_r == 0.0:
+						micro_f1 = 0.0
+					else:
+						micro_f1 = 2.0 * ((micro_p * micro_r) / (micro_p + micro_r))
 					logging.info(f"Task Micro:\tN={TP + FN:.0f}\tF1={micro_f1:.4f}\tP={micro_p:.4f}\tR={micro_r:.4f}\tTP={TP:.0f}\tFP={FP:.0f}\tFN={FN:.0f}")
 
 					# Put the model back in train setting
