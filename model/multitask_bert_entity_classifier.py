@@ -6,6 +6,7 @@ import torch
 Q_TOKEN = "<Q_TARGET>"
 URL_TOKEN = "<url>"
 POSSIBLE_BATCH_SIZE = 8
+# POSSIBLE_BATCH_SIZE = 16
 RANDOM_SEED = 0
 import random
 random.seed(RANDOM_SEED)
@@ -60,7 +61,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 torch.manual_seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
-# export CUDA_VISIBLE_DEVICES=3
+
 if torch.cuda.is_available():
 	device = torch.device("cuda")
 	logging.info(f"Using GPU{torch.cuda.get_device_name(0)} to train")
@@ -94,7 +95,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(
-			p=model_flags['dropout']
+			p=config.hidden_dropout_prob
 		)
 
 		pooling_type = model_flags['pooling_type'].lower()
@@ -159,15 +160,6 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 			head_mask=head_mask,
 			inputs_embeds=inputs_embeds,
 		)
-		# DEBUG:
-		# print("BERT model outputs shape", outputs[0].shape, outputs[1].shape)
-		# print(entity_start_positions[:, 0], entity_start_positions[:, 1])
-		
-		# OLD CODE:
-		# pooled_output = outputs[1]
-
-		# NOTE: outputs[0] has all the hidden dimensions for the entire sequence
-		# We will extract the embeddings indexed with entity_start_positions
 		contextualized_embeddings = outputs[0]
 
 		width_embedding_type = model_flags['width_embeddings'].lower()
@@ -183,7 +175,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 				pooled_output = self.pooler[subtask](
 					contextualized_embeddings,
 					# masks used are inverted, aka ignored values should be True
-					stored_pattern_padding_mask=~attention_mask.bool()
+					# stored_pattern_padding_mask=~attention_mask.bool()
+					stored_pattern_padding_mask=~entity_span_masks.bool()
 				)
 				pooled_output = self.dropout(pooled_output)
 
@@ -303,11 +296,25 @@ class TokenizeCollator():
 		# entity_start_positions = (input_ids == self.entity_start_token_id).nonzero()
 		entity_start_positions = torch.nonzero((input_ids == self.entity_start_token_id), as_tuple=False)
 		entity_end_positions = torch.nonzero((input_ids == self.entity_end_token_id), as_tuple=False)
+		if model_flags['modify_masks']:
+			# remove <E>, </E> from attention_mask
+			attention_mask[entity_start_positions[:, 0], entity_start_positions[:, 1]] = 0
+			attention_mask[entity_end_positions[:, 0], entity_end_positions[:, 1]] = 0
 		# width of span within <E> ... </E>
 		entity_span_widths = entity_end_positions[:, 1] - entity_start_positions[:, 1] - 1
 		entity_span_widths = torch.clamp(entity_span_widths, 0, 100)
-		# mask over <E> ... </E>
-		entity_span_masks = create_mask(entity_start_positions, entity_end_positions + 1, input_ids.shape[1])
+		if model_flags['modify_masks']:
+			entity_start_positions[:, 1] = entity_start_positions[:, 1] + 1
+			entity_end_positions[:, 1] = entity_end_positions[:, 1]
+			# [CLS] <E> </E> move to start and end at [CLS]
+			entity_start_positions[:, 1][entity_span_widths == 0] = 0
+			entity_end_positions[:, 1][entity_span_widths == 0] = 1
+			# mask within <E> ... </E>, only [CLS] when empty
+			entity_span_masks = create_mask(entity_start_positions, entity_end_positions, input_ids.shape[1])
+		else:
+			# mask over <E> ... </E>
+			entity_span_masks = create_mask(entity_start_positions, entity_end_positions + 1, input_ids.shape[1])
+
 		# Also extract the gold labels
 		labels = {subtask: torch.LongTensor(subtask_gold_labels) for subtask, subtask_gold_labels in gold_labels.items()}
 		# print(len(batch))

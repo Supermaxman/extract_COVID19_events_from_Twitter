@@ -22,6 +22,8 @@ logging.getLogger().setLevel(logging.INFO)
 parser = argparse.ArgumentParser()
 
 parser.add_argument("-c", "--config", help="Path to the config file that contains the experiment details", type=str, required=True)
+# tested_positive,tested_negative,can_not_test,death,cure
+parser.add_argument("-t", "--tasks", help="Tasks to run", type=str, default='tested_positive')
 args = parser.parse_args()
 
 config = json.load(open(args.config))
@@ -38,6 +40,8 @@ task_type_to_datapath_dict = {
 REDO_DATA_FLAG = False
 REDO_FLAG = False
 RETRAIN_FLAG = True
+# run_tasks = {"tested_positive", "tested_negative", "can_not_test", "death", "cure"}
+run_tasks = set(args.tasks.split(','))
 # REDO_FLAG = False
 model_type = config['model_type']
 run_name = config['run_name']
@@ -50,6 +54,8 @@ all_task_results_and_model_configs = dict()
 # We will save the list of question_tags AKA subtasks for each event AKA task in this dict
 all_task_question_tags = dict()
 for taskname, (data_in_file, processed_out_file) in task_type_to_datapath_dict.items():
+  if taskname not in run_tasks:
+    continue
   if not os.path.exists(processed_out_file) or REDO_DATA_FLAG:
     data_preprocessing_cmd = f"python model/data_preprocessing.py -d {data_in_file} -s {processed_out_file}"
     logging.info(data_preprocessing_cmd)
@@ -113,6 +119,8 @@ with open(results_tsv_save_file, "w") as tsv_out:
             "dev_P", "dev_R", "dev_TP", "dev_FP", "dev_FN", "N", "F1", "P", "R", "TP", "FP", "FN"]
   writer.writerow(header)
   for taskname, question_tags in all_task_question_tags.items():
+    if taskname not in run_tasks:
+      continue
     current_task_results_and_model_configs = all_task_results_and_model_configs[taskname]
     for question_tag in question_tags:
       results, model_config = current_task_results_and_model_configs[question_tag]

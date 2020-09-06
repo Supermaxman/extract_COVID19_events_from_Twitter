@@ -1,0 +1,11 @@
+{
+  "run_name": "hopfield_span_width",
+  "pre_model_name": "digitalepidemiologylab/covid-twitter-bert",
+  "model_type": "bert",
+  "gpu_id": 0,
+  "model_flags": {
+    "pooling_type": "hopfield_pool",
+    "width_embeddings": "single_width",
+    "hopfield_update_steps": 0
+  }
+}
