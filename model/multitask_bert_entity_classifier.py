@@ -103,7 +103,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 			self.pooler = HopfieldPooling(
 				input_size=config.hidden_size,
 				update_steps_max=model_flags['hopfield_update_steps'],
-				dropout=model_flags['hopfield_dropout']
+				dropout=model_flags['hopfield_dropout'],
+				num_heads=model_flags['hopfield_heads']
 			)
 
 		elif pooling_type == 'hopfield_pool':
@@ -112,7 +113,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 					subtask: HopfieldPooling(
 						input_size=config.hidden_size,
 						update_steps_max=model_flags['hopfield_update_steps'],
-						dropout=model_flags['hopfield_dropout']
+						dropout=model_flags['hopfield_dropout'],
+						num_heads=model_flags['hopfield_heads']
 					)
 					for subtask in self.subtasks
 				}
