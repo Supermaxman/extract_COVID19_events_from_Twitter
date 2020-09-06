@@ -90,6 +90,7 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 	def __init__(self, config):
 		super().__init__(config)
 		self.num_labels = config.num_labels
+		self.subtasks = config.subtasks
 
 		self.bert = BertModel(config)
 		self.dropout = nn.Dropout(
@@ -121,7 +122,6 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 				embedding_dim=25
 			)
 			extra_size += 25
-		self.subtasks = config.subtasks
 		# We will create a dictionary of classifiers based on the number of subtasks
 		self.classifiers = nn.ModuleDict(
 			{
@@ -179,7 +179,8 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 			for subtask in self.subtasks:
 				pooled_output = self.pooler[subtask](
 					contextualized_embeddings,
-					stored_pattern_padding_mask=attention_mask.bool()
+					# masks used are inverted, aka ignored values should be True
+					stored_pattern_padding_mask=~attention_mask.bool()
 				)
 				pooled_output = self.dropout(pooled_output)
 
@@ -193,7 +194,11 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 			elif pooling_type == 'span_max_pool':
 				pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
 			elif pooling_type == 'span_hopfield_single_pool':
-				pooled_output = self.pooler(contextualized_embeddings, stored_pattern_padding_mask=entity_span_masks.bool())
+				# masks used are inverted, aka ignored values should be True
+				pooled_output = self.pooler(
+					contextualized_embeddings,
+					stored_pattern_padding_mask=~entity_span_masks.bool()
+				)
 			else:
 				raise ValueError(f'Unknown pooling_type: {pooling_type}')
 

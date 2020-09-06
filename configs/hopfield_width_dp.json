@@ -1,5 +1,5 @@
 {
-  "run_name": "hopfield_width",
+  "run_name": "hopfield_width_dp",
   "pre_model_name": "digitalepidemiologylab/covid-twitter-bert",
   "model_type": "bert",
   "gpu_id": 0,
