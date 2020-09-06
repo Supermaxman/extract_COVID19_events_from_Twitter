@@ -92,11 +92,24 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		self.num_labels = config.num_labels
 
 		self.bert = BertModel(config)
-		self.dropout = nn.Dropout(config.hidden_dropout_prob)
+		self.dropout = nn.Dropout(
+			p=model_flags['dropout']
+		)
 
 		pooling_type = model_flags['pooling_type'].lower()
 		if pooling_type == 'span_hopfield_single_pool':
 			self.pooler = HopfieldPooling(input_size=config.hidden_size)
+
+		elif pooling_type == 'hopfield_pool':
+			self.pooler = nn.ModuleDict(
+				{
+					subtask: HopfieldPooling(
+						input_size=config.hidden_size,
+						update_steps_max=model_flags['hopfield_update_steps']
+					)
+					for subtask in self.subtasks
+				}
+			)
 
 		extra_size = 0
 		width_embeddings = model_flags['width_embeddings'].lower()
@@ -153,32 +166,45 @@ class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
 		# NOTE: outputs[0] has all the hidden dimensions for the entire sequence
 		# We will extract the embeddings indexed with entity_start_positions
 		contextualized_embeddings = outputs[0]
-		pooling_type = model_flags['pooling_type'].lower()
-		if pooling_type == 'head':
-			pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
-		elif pooling_type == 'span_max_pool':
-			pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
-		elif pooling_type == 'span_hopfield_single_pool':
-			pooled_output = self.pooler(contextualized_embeddings, stored_pattern_padding_mask=entity_span_masks.bool())
-		else:
-			raise ValueError(f'Unknown pooling_type: {pooling_type}')
-		# DEBUG:
-		# print(pooled_output.shape)
-		# exit()
 
-		pooled_output = self.dropout(pooled_output)
-
-		width_embeddings = model_flags['width_embeddings'].lower()
-		if width_embeddings == 'none':
+		width_embedding_type = model_flags['width_embeddings'].lower()
+		if width_embedding_type == 'none':
 			pass
-		elif width_embeddings == 'single_width':
+		elif width_embedding_type == 'single_width':
 			width_embeddings = self.width_embeddings(entity_span_widths)
 
-			pooled_output = torch.cat((pooled_output, width_embeddings), 1)
+		pooling_type = model_flags['pooling_type'].lower()
+		if pooling_type == 'hopfield_pool':
+			logits = {}
+			for subtask in self.subtasks:
+				pooled_output = self.pooler[subtask](
+					contextualized_embeddings,
+					stored_pattern_padding_mask=attention_mask.bool()
+				)
+				pooled_output = self.dropout(pooled_output)
 
-		# Get logits for each subtask
-		# logits = self.classifier(pooled_output)
-		logits = {subtask: self.classifiers[subtask](pooled_output) for subtask in self.subtasks}
+				if width_embedding_type == 'single_width':
+					pooled_output = torch.cat((pooled_output, width_embeddings), 1)
+
+				logits[subtask] = self.classifiers[subtask](pooled_output)
+		else:
+			if pooling_type == 'head':
+				pooled_output = contextualized_embeddings[entity_start_positions[:, 0], entity_start_positions[:, 1], :]
+			elif pooling_type == 'span_max_pool':
+				pooled_output = (contextualized_embeddings * entity_span_masks.unsqueeze(2)).max(axis=1)[0]
+			elif pooling_type == 'span_hopfield_single_pool':
+				pooled_output = self.pooler(contextualized_embeddings, stored_pattern_padding_mask=entity_span_masks.bool())
+			else:
+				raise ValueError(f'Unknown pooling_type: {pooling_type}')
+
+			pooled_output = self.dropout(pooled_output)
+
+			if width_embedding_type == 'single_width':
+				pooled_output = torch.cat((pooled_output, width_embeddings), 1)
+
+			# Get logits for each subtask
+			# logits = self.classifier(pooled_output)
+			logits = {subtask: self.classifiers[subtask](pooled_output) for subtask in self.subtasks}
 
 		outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
 
