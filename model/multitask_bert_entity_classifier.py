@@ -263,9 +263,11 @@ class TokenizeCollator():
 		gold_labels = {subtask: list() for subtask in self.subtasks}
 		# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id ::
 		# tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
+		chunk_text = []
 		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, \
 				tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:
 			tokenized_tweet_with_masked_chunk = self.fix_user_mentions_in_tokenized_tweet(tokenized_tweet_with_masked_chunk)
+			chunk_text.append(chunk)
 			if chunk in ["AUTHOR OF THE TWEET", "NEAR AUTHOR OF THE TWEET"]:
 				# First element of the text will be considered as AUTHOR OF THE TWEET or NEAR AUTHOR OF THE TWEET
 				bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> </E>")
@@ -343,7 +345,8 @@ class TokenizeCollator():
 			"entity_span_masks": entity_span_masks,
 			"attention_mask": attention_mask,
 			"gold_labels": labels,
-			"batch_data": batch
+			"batch_data": batch,
+			"chunk_text": chunk_text
 		}
 
 
@@ -648,12 +651,23 @@ def main():
 					# during evaluation.
 					model.eval()
 					dev_predicted_labels, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
+					TP = 0
+					FP = 0
+					FN = 0
 					for subtask in model.subtasks:
 						dev_subtask_data = dev_subtasks_data[subtask]
 						dev_subtask_prediction_scores = dev_prediction_scores[subtask]
 						dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores)
 						logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN:.0f}\tF1={dev_F1:.4f}\tP={dev_P:.4f}\tR={dev_R:.4f}\tTP={dev_TP:.0f}\tFP={dev_FP:.0f}\tFN={dev_FN:.0f}")
 						dev_subtasks_validation_statistics[subtask].append((epoch + 1, step + 1, dev_TP + dev_FN, dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN))
+						TP += dev_TP
+						FP += dev_FP
+						FN += dev_FN
+
+					micro_p = TP / (TP + FP)
+					micro_r = TP / (TP + FN)
+					micro_f1 = 2.0 * ((micro_p * micro_r) / (micro_p + micro_r))
+					logging.info(f"Task Micro:\tN={TP + FN:.0f}\tF1={micro_f1:.4f}\tP={micro_p:.4f}\tR={micro_r:.4f}\tTP={TP:.0f}\tFP={FP:.0f}\tFN={FN:.0f}")
 
 					# Put the model back in train setting
 					model.train()
