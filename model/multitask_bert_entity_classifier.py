@@ -470,6 +470,17 @@ def log_multitask_data_statistics(data, subtasks):
 	return len(data), pos_counts, neg_counts
 
 
+def get_optimizer_params(model, weight_decay):
+	param_optimizer = list(model.named_parameters())
+	no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+	optimizer_params = [
+		{'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)],
+		 'weight_decay': weight_decay},
+		{'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
+
+	return optimizer_params
+
+
 def main():
 	# Read all the data instances
 	task_instances_dict, tag_statistics, question_keys_and_tags = load_from_pickle(args.data_file)
@@ -566,8 +577,18 @@ def main():
 		# Batch size: 16, 32
 		# Learning rate (Adam): 5e-5, 3e-5, 2e-5
 		# Number of epochs: 2, 3, 4
-		# 2e-5
-		optimizer = AdamW(model.parameters(), lr=model_flags['initial_learning_rate'], eps=1e-8)
+		# 2e-5, 1e-8
+		if model_flags['correct_params']:
+			params = get_optimizer_params(model, model_flags['weight_decay'])
+		else:
+			params = model.parameters()
+		optimizer = AdamW(
+			params,
+			lr=model_flags['initial_learning_rate'],
+			eps=model_flags['eps'],
+			weight_decay=model_flags['weight_decay'],
+			correct_bias=model_flags['correct_bias']
+		)
 		logging.info("Created model optimizer")
 		# Number of training epochs. The BERT authors recommend between 2 and 4. 
 		# We chose to run for 4, but we'll see later that this may be over-fitting the
