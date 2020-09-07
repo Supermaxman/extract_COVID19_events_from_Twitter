@@ -719,7 +719,8 @@ def main():
 						micro_f1 = 0.0
 					else:
 						micro_f1 = 2.0 * ((micro_p * micro_r) / (micro_p + micro_r))
-					logging.info(f"Task Micro:\tN={TP + FN:.0f}\tF1={micro_f1:.4f}\tP={micro_p:.4f}\tR={micro_r:.4f}\tTP={TP:.0f}\tFP={FP:.0f}\tFN={FN:.0f}")
+					micro_name = 'all_micro'
+					logging.info(f"Task:{micro_name:>15}\tN={TP + FN:.0f}\tF1={micro_f1:.4f}\tP={micro_p:.4f}\tR={micro_r:.4f}\tTP={TP:.0f}\tFP={FP:.0f}\tFN={FN:.0f}")
 
 					# Put the model back in train setting
 					model.train()
