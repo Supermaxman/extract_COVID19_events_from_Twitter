@@ -1,3 +1,28 @@
+
+import json
+import argparse
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument("-d", "--data_file", help="Path to the pickle file that contains the training instances", type=str, required=True)
+parser.add_argument("-t", "--task", help="Event for which we want to train the baseline", type=str, required=True)
+parser.add_argument("-s", "--save_directory", help="Path to the directory where we will save model and the tokenizer", type=str, required=True)
+parser.add_argument("-pm", "--pre_model", help="Pre-trained model to initialize.", type=str, required=True)
+parser.add_argument("-mf", "--model_flags", help="Flags for model config.", type=str, required=True)
+parser.add_argument("-o", "--output_dir", help="Path to the output directory where we will save all the model results", type=str, required=True)
+parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the model needs to be retrained or loaded from the existing save_directory", action="store_true")
+# parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
+# parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
+args = parser.parse_args()
+
+pre_model_name = args.pre_model
+model_flags = json.loads(args.model_flags)
+batch_size = model_flags['batch_size']
+POSSIBLE_BATCH_SIZE = model_flags['possible_batch_size']
+epochs = model_flags['epochs']
+RANDOM_SEED = model_flags['seed']
+
+
 from transformers import BertTokenizer, BertPreTrainedModel, BertModel, BertConfig, AdamW, get_linear_schedule_with_warmup
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
@@ -5,9 +30,7 @@ import torch
 
 Q_TOKEN = "<Q_TARGET>"
 URL_TOKEN = "<url>"
-POSSIBLE_BATCH_SIZE = 8
-# POSSIBLE_BATCH_SIZE = 16
-RANDOM_SEED = 0
+
 import random
 random.seed(RANDOM_SEED)
 
@@ -20,30 +43,12 @@ import matplotlib.pyplot as plt
 
 import os
 from tqdm import tqdm
-import argparse
 import time
 import datetime
 
 from utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, save_in_json, get_raw_scores, get_TP_FP_FN
 from hopfield import HopfieldPooling
 
-import json
-
-parser = argparse.ArgumentParser()
-
-parser.add_argument("-d", "--data_file", help="Path to the pickle file that contains the training instances", type=str, required=True)
-parser.add_argument("-t", "--task", help="Event for which we want to train the baseline", type=str, required=True)
-parser.add_argument("-s", "--save_directory", help="Path to the directory where we will save model and the tokenizer", type=str, required=True)
-parser.add_argument("-pm", "--pre_model", help="Pre-trained model to initialize.", type=str, required=True)
-parser.add_argument("-mf", "--model_flags", help="Flags for model config.", type=str, required=True)
-parser.add_argument("-o", "--output_dir", help="Path to the output directory where we will save all the model results", type=str, required=True)
-parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the model needs to be retrained or loaded from the existing save_directory", action="store_true")
-parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
-parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
-args = parser.parse_args()
-
-pre_model_name = args.pre_model
-model_flags = json.loads(args.model_flags)
 
 import logging
 # Ref: https://stackoverflow.com/a/49202811/4535284
@@ -562,18 +567,17 @@ def main():
 		# Learning rate (Adam): 5e-5, 3e-5, 2e-5
 		# Number of epochs: 2, 3, 4
 		# 2e-5
-		optimizer = AdamW(model.parameters(), lr=2e-5, eps=1e-8)
+		optimizer = AdamW(model.parameters(), lr=model_flags['initial_learning_rate'], eps=1e-8)
 		logging.info("Created model optimizer")
 		# Number of training epochs. The BERT authors recommend between 2 and 4. 
 		# We chose to run for 4, but we'll see later that this may be over-fitting the
 		# training data.
-		epochs = args.n_epochs
 
 		# Total number of training steps is [number of batches] x [number of epochs]. 
 		# (Note that this is not the same as the number of training samples).
 		# total_train_steps = (len(train_dataloader) * epochs)
 		# TODO decide on if this is correct due to accumulator steps
-		total_train_steps = (len(train_dataloader) * epochs) // (args.batch_size // POSSIBLE_BATCH_SIZE)
+		total_train_steps = (len(train_dataloader) * epochs) // (batch_size // POSSIBLE_BATCH_SIZE)
 
 		# Create the learning rate scheduler.
 		# NOTE: num_warmup_steps = 0 is the Default value in run_glue.py
@@ -586,12 +590,12 @@ def main():
 		# validation accuracy, and timings.
 		training_stats = []
 
-		logging.info(f"Initiating training loop for {args.n_epochs} epochs...")
+		logging.info(f"Initiating training loop for {epochs} epochs...")
 		# Measure the total training time for the whole run.
 		total_start_time = time.time()
 
 		# Find the accumulation steps
-		accumulation_steps = args.batch_size/POSSIBLE_BATCH_SIZE
+		accumulation_steps = batch_size/POSSIBLE_BATCH_SIZE
 
 		# Loss trajectory for epochs
 		epoch_train_loss = list()
@@ -616,9 +620,9 @@ def main():
 				for subtask in model.subtasks:
 					subtask_labels = batch["gold_labels"][subtask]
 					subtask_labels = subtask_labels.to(device)
-					# print("HAHAHAHAH:", subtask_labels.is_cuda)
+
 					batch["gold_labels"][subtask] = subtask_labels
-					# print("HAHAHAHAH:", batch["gold_labels"][subtask].is_cuda)
+
 				# Forward
 				input_dict = {
 					"input_ids": batch["input_ids"].to(device),
@@ -733,7 +737,7 @@ def main():
 
 	# Save the model name in the model_config file
 	model_config["model"] = "MultiTaskBertForCovidEntityClassification"
-	model_config["epochs"] = args.n_epochs
+	model_config["epochs"] = epochs
 
 	# Find best threshold for each subtask based on dev set performance
 	thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
