@@ -11,7 +11,10 @@ parser.add_argument("-pm", "--pre_model", help="Pre-trained model to initialize.
 parser.add_argument("-mf", "--model_flags", help="Flags for model config.", type=str, required=True)
 parser.add_argument("-o", "--output_dir", help="Path to the output directory where we will save all the model results", type=str, required=True)
 parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the model needs to be retrained or loaded from the existing save_directory", action="store_true")
-parser.add_argument("-pd", "--predict", help="Flag that will indicate if we are performing predictions on unlabeled data.", action="store_true", default=False)
+parser.add_argument("-p", "--predict", help="Flag that will indicate if we are performing predictions on unlabeled data.", action="store_true", default=False)
+parser.add_argument("-pd", "--predict_data_file", help="Path to the pickle file that contains the training instances", type=str, required=False)
+parser.add_argument("-po", "--predict_file", help="Path to the prediction output file", type=str, required=False)
+
 # parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
 # parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 args = parser.parse_args()
@@ -800,6 +803,7 @@ def main():
 	# run prediction on unlabeld data
 	else:
 		logging.info("Running predictions on unlabeled data...")
+
 
 
 if __name__ == '__main__':
