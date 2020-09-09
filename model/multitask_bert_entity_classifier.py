@@ -44,7 +44,7 @@ import os
 from tqdm import tqdm
 import time
 
-from .utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, \
+from model.utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, \
 	get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, \
 	save_in_json, get_raw_scores, get_TP_FP_FN, make_dir_if_not_exists, format_time, \
 	plot_train_loss, get_optimizer_params, log_multitask_data_statistics, split_data_based_on_subtasks, \

@@ -5,7 +5,7 @@ import argparse
 import re
 import json
 import logging
-from .utils import log_list, print_list, save_in_pickle, load_from_pickle
+from model.utils import log_list, print_list, save_in_pickle, load_from_pickle
 
 logging.basicConfig()
 logging.getLogger().setLevel(logging.INFO)
