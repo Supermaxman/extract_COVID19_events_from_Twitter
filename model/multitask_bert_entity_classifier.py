@@ -871,7 +871,7 @@ def main():
 			pred_chunks = compute_threshold_predictions(model, pred_subtask_data, prediction_scores, best_dev_thresholds)
 
 			with open(cache_pred_file, 'w') as f:
-				json.dump(pred_subtask_data, f)
+				json.dump(pred_chunks, f)
 
 		with open(args.predict_file, 'w') as f:
 			# save predictions as jsonl at args.predict_file
