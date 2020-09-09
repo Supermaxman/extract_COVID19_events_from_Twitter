@@ -6,7 +6,12 @@ import string
 import collections
 import json
 import pickle
+import torch
 
+import datetime
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 import logging
 logging.basicConfig()
@@ -16,27 +21,33 @@ MIN_POS_SAMPLES_THRESHOLD = 10
 Q_TOKEN = "<Q_TARGET>"
 URL_TOKEN = "<URL>"
 
+
 def print_list(l):
 	for e in l:
 		print(e)
 	print()
+
 
 def log_list(l):
 	for e in l:
 		logging.info(e)
 	logging.info("")
 
+
 def save_in_pickle(save_object, save_file):
 	with open(save_file, "wb") as pickle_out:
 		pickle.dump(save_object, pickle_out)
+
 
 def load_from_pickle(pickle_file):
 	with open(pickle_file, "rb") as pickle_in:
 		return pickle.load(pickle_in)
 
+
 def save_in_json(save_dict, save_file):
 	with open(save_file, 'w') as fp:
 		json.dump(save_dict, fp)
+
 
 def load_from_json(json_file):
 	with open(json_file, 'r') as fp:
@@ -67,8 +78,10 @@ def make_dir_if_not_exists(directory):
 		logging.info("Creating new directory: {}".format(directory))
 		os.makedirs(directory)
 
+
 def extract_instances_for_current_subtask(task_instances, sub_task):
 	return task_instances[sub_task]
+
 
 def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
 	# Extract instances and labels from all the sub-task
@@ -82,43 +95,65 @@ def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
 	# For each tweet we will first extract all its instances from each task and their corresponding labels
 	text_to_subtask_instances = dict()
 	original_text_list = list()
+	instance_id = 0
+	instances = {}
 	for subtask in subtasks:
 		# get the instances for current subtask and add it to a set
-		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label in task_instances[subtask]:
-			instance = (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk)
+		for example in task_instances[subtask]:
+			# text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label
+			# instance = (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk)
+			instance = {
+				'text': example['text'],
+				'chunk': example['chunk'],
+				'chunk_id': example['chunk_id'],
+				'chunk_start_text_id': example['chunk_start_text_id'],
+				'chunk_end_text_id': example['chunk_end_text_id'],
+				'tokenized_tweet': example['tokenized_tweet'],
+				'tokenized_tweet_with_masked_chunk': example['tokenized_tweet_with_masked_chunk'],
+				'instance_id': instance_id
+			}
+			instances[instance_id] = instance
+			text = example['text']
+			gold_chunk = example['gold_chunk']
+			label = example['label']
 			if text not in text_to_subtask_instances:
 				original_text_list.append(text)
 				text_to_subtask_instances[text] = dict()
-			text_to_subtask_instances[text].setdefault(instance, dict())
-			text_to_subtask_instances[text][instance][subtask] = (gold_chunk, label)
+			text_to_subtask_instances[text].setdefault(instance_id, dict())
+			text_to_subtask_instances[text][instance_id][subtask] = (gold_chunk, label)
+			instance_id += 1
 	# print(len(text_to_subtask_instances))
 	# print(len(original_text_list))
 	# print(sum(len(instance_dict) for text, instance_dict in text_to_subtask_instances.items()))
 	# For each instance we need to make sure that it has all the subtask labels
 	# For missing subtask labels we will give a default label of 0
 	for text in original_text_list:
-		for instance, subtasks_labels_dict in text_to_subtask_instances[text].items():
+		for instance_id, subtasks_labels_dict in text_to_subtask_instances[text].items():
 			for subtask in subtasks:
 				if subtask not in subtasks_labels_dict:
 					# Adding empty label for this instance
 					subtasks_labels_dict[subtask] = ([], 0)
 			# update the subtask labels_dict in the text_to_subtask_instances data structure
 			assert len(subtasks_labels_dict) == len(subtasks)
-			text_to_subtask_instances[text][instance] = subtasks_labels_dict
+			text_to_subtask_instances[text][instance_id] = subtasks_labels_dict
 
 	# Merge all the instances into one list
 	all_multitask_instances = list()
 	for text in original_text_list:
-		for instance, subtasks_labels_dict in text_to_subtask_instances[text].items():
-			all_multitask_instances.append((*instance, subtasks_labels_dict))
+		for instance_id, subtasks_labels_dict in text_to_subtask_instances[text].items():
+			instance = instances[instance_id]
+			instance['subtasks_labels_dict'] = subtasks_labels_dict
+			all_multitask_instances.append(instance)
 	return all_multitask_instances, subtasks
+
 
 def split_multitask_instances_in_train_dev_test(multitask_instances, TRAIN_RATIO = 0.6, DEV_RATIO = 0.15):
 	# Group the multitask_instances by original tweet
 	original_tweets = dict()
 	original_tweets_list = list()
 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-	for tweet,_,_,_,_,_,_,_ in multitask_instances:
+	for example in multitask_instances:
+		tweet = example['text']
 		if tweet not in original_tweets:
 			original_tweets[tweet] = 1
 			original_tweets_list.append(tweet)
@@ -141,7 +176,7 @@ def split_multitask_instances_in_train_dev_test(multitask_instances, TRAIN_RATIO
 		tweets_to_segment[tweet] = "test"
 	# Get multitask_instances
 	for instance in multitask_instances:
-		tweet = instance[0]
+		tweet = instance['text']
 		segment_multitask_instances[tweets_to_segment[tweet]].append(instance)
 
 	# print(f"Train:{len(train_tweets)}\t Dev:{len(dev_tweets)}\t Test:{len(test_tweets)}")
@@ -153,7 +188,8 @@ def split_instances_in_train_dev_test(instances, TRAIN_RATIO = 0.6, DEV_RATIO = 
 	original_tweets = dict()
 	original_tweets_list = list()
 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-	for tweet,_,_,_,_,_,_,_,_ in instances:
+	for example in instances:
+		tweet = example['text']
 		if tweet not in original_tweets:
 			original_tweets[tweet] = 1
 			original_tweets_list.append(tweet)
@@ -176,18 +212,20 @@ def split_instances_in_train_dev_test(instances, TRAIN_RATIO = 0.6, DEV_RATIO = 
 		tweets_to_segment[tweet] = "test"
 	# Get instances
 	for instance in instances:
-		tweet = instance[0]
+		tweet = instance['text']
 		segment_instances[tweets_to_segment[tweet]].append(instance)
 
 	# print(f"Train:{len(train_tweets)}\t Dev:{len(dev_tweets)}\t Test:{len(test_tweets)}")
 	# print(f"Train:{len(segment_instances['train'])}\t Dev:{len(segment_instances['dev'])}\t Test:{len(segment_instances['test'])}")
 	return segment_instances['train'], segment_instances['dev'], segment_instances['test']
 
+
 def log_data_statistics(data):
 	logging.info(f"Total instances in the data = {len(data)}")
-	pos_count = sum(label for _,_,_,_,_,_,_,_,label in data)
+	pos_count = sum(example['label'] for example in data)
 	logging.info(f"Positive labels = {pos_count} Negative labels = {len(data) - pos_count}")
 	return len(data), pos_count, (len(data) - pos_count)
+
 
 # SQuAD F-1 evaluation
 def normalize_answer(s):
@@ -195,21 +233,27 @@ def normalize_answer(s):
 	def remove_articles(text):
 		regex = re.compile(r'\b(a|an|the)\b', re.UNICODE)
 		return re.sub(regex, ' ', text)
+
 	def white_space_fix(text):
 		return ' '.join(text.split())
+
 	def remove_punc(text):
 		exclude = set(string.punctuation)
 		return ''.join(ch for ch in text if ch not in exclude)
+
 	def lower(text):
 		return text.lower()
 	return white_space_fix(remove_articles(remove_punc(lower(s))))
+
 
 def get_tokens(s):
 	if not s: return []
 	return normalize_answer(s).split()
 
+
 def compute_exact(a_gold, a_pred):
 	return int(normalize_answer(a_gold) == normalize_answer(a_pred))
+
 
 def compute_f1(a_gold, a_pred):
 	gold_toks = get_tokens(a_gold)
@@ -226,11 +270,15 @@ def compute_f1(a_gold, a_pred):
 	f1 = (2 * precision * recall) / (precision + recall)
 	return f1
 
+
 def get_raw_scores(data, prediction_scores, positive_only=False):
 	predicted_chunks_for_each_instance = dict()
 	# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-	for (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
-		original_text = text
+	#(text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label)
+	for example, prediction_score in zip(data, prediction_scores):
+		original_text = example['text']
+		gold_chunk = example['gold_chunk']
+		chunk = example['chunk']
 		# print(text)
 		# print(chunk)
 		# print(original_text)
@@ -295,7 +343,6 @@ def get_raw_scores(data, prediction_scores, positive_only=False):
 			# exact_scores += compute_exact(gold_chunk, current_predicted_chunk)
 			# f1_scores += compute_f1(gold_chunk, current_predicted_chunk)
 		
-	# print("AKAJF:LKAJFL:AKDJFALSKJSALKDJ", len(predicted_chunks_for_each_instance))
 	if total == 0:
 		predictions_exact_score = total
 		predictions_f1_score = total
@@ -304,10 +351,15 @@ def get_raw_scores(data, prediction_scores, positive_only=False):
 		predictions_f1_score = f1_scores * 100.0 / total
 	return predictions_exact_score, predictions_f1_score, total
 
+
 def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
 	predicted_chunks_for_each_instance = dict()
-	for (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label), prediction_score in zip(data, prediction_scores):
-		original_text = text
+	# (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label)
+	for example, prediction_score in zip(data, prediction_scores):
+		original_text = example['text']
+		gold_chunk = example['gold_chunk']
+		label = example['label']
+		chunk = example['chunk']
 		# print(text)
 		# print(chunk)
 		# print(original_text)
@@ -359,7 +411,7 @@ def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
 				for predicted_chunk in predicted_chunks:
 					FP += 1			# False positives are predicted spans that don't appear in the gold labels.
 
-	# print("AKAJF:LKAJFL:AKDJFALSKJSALKDJ", total_gold_chunks)
+
 	if TP + FP == 0:
 		P = 0.0
 	else:
@@ -375,3 +427,88 @@ def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
 	else:
 		F1 = 2.0 * P * R / (P + R)
 	return F1, P, R, TP, FP, FN
+
+
+def make_dir_if_not_exists(directory):
+	if not os.path.exists(directory):
+		logging.info("Creating new directory: {}".format(directory))
+		os.makedirs(directory)
+
+
+def format_time(elapsed):
+	'''
+	Takes a time in seconds and returns a string hh:mm:ss
+	'''
+	# Round to the nearest second.
+	elapsed_rounded = int(round((elapsed)))
+
+	# Format as hh:mm:ss
+	return str(datetime.timedelta(seconds=elapsed_rounded))
+
+
+def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
+	plt.cla()
+	plt.clf()
+
+	fig, ax = plt.subplots()
+	x = [epoch * len(loss_trajectory) + j + 1 for epoch, loss_trajectory in enumerate(loss_trajectory_per_epoch) for j, avg_loss in enumerate(loss_trajectory) ]
+	x_ticks = [ "(" + str(epoch + 1) + "," + str(j + 1) + ")" for epoch, loss_trajectory in enumerate(loss_trajectory_per_epoch) for j, avg_loss in enumerate(loss_trajectory) ]
+	full_train_trajectory = [avg_loss for epoch, loss_trajectory in enumerate(loss_trajectory_per_epoch) for j, avg_loss in enumerate(loss_trajectory)]
+	ax.plot(x, full_train_trajectory)
+
+	ax.set(xlabel='Epoch, Step', ylabel='Loss',
+			title='Train loss trajectory')
+	step_size = 100
+	ax.xaxis.set_ticks(range(0, len(x_ticks), step_size), x_ticks[::step_size])
+	ax.grid()
+
+	fig.savefig(trajectory_file)
+
+
+def split_data_based_on_subtasks(data, subtasks):
+	# We will split the data into data_instances based on subtask_labels
+	subtasks_data = {subtask: list() for subtask in subtasks}
+	# text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtasks_labels_dict
+	for example in data:
+		for subtask in subtasks:
+			# text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk,
+			subtask_example = example.copy()
+			subtask_label = subtask_example['subtasks_labels_dict'][subtask]
+			subtask_example['gold_chunk'] = subtask_label[0]
+			subtask_example['label'] = subtask_label[1]
+			subtasks_data[subtask].append(subtask_example)
+	return subtasks_data
+
+
+def log_multitask_data_statistics(data, subtasks):
+	logging.info(f"Total instances in the data = {len(data)}")
+	# print positive and negative counts for each subtask
+	# print(len(data[0]))
+	pos_counts = {subtask: sum(example['subtasks_labels_dict'][subtask][1] for example in data) for subtask in subtasks}
+	# Log for each subtask
+	neg_counts = dict()
+	for subtask in subtasks:
+		neg_counts[subtask] = len(data) - pos_counts[subtask]
+		logging.info(f"Subtask:{subtask:>15}\tPositive labels = {pos_counts[subtask]}\tNegative labels = {neg_counts[subtask]}")
+	return len(data), pos_counts, neg_counts
+
+
+def get_optimizer_params(model, weight_decay):
+	param_optimizer = list(model.named_parameters())
+	no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+	optimizer_params = [
+		{'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)],
+		 'weight_decay': weight_decay},
+		{'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
+
+	return optimizer_params
+
+
+def create_mask(start_indices, end_indices, seq_len):
+	batch_size = start_indices.shape[0]
+	cols = torch.LongTensor(range(seq_len)).repeat(batch_size, 1)
+	beg = start_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
+	end = end_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
+	mask = cols.ge(beg) & cols.lt(end)
+	mask = mask.float()
+	return mask

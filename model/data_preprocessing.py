@@ -16,6 +16,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--data_file", help="Path to the data file", type=str, required=True)
 parser.add_argument("-s", "--save_file", help="Path to the Instances, Statistics and Header pickle save file", type=str,
 										required=True)
+parser.add_argument("-pd", "--predict", help="Flag that will indicate if we are performing predictions on unlabeled data.", action="store_true",
+										default=False)
+
 args = parser.parse_args()
 
 
@@ -120,22 +123,22 @@ def get_tweet_tokens_from_tags(tags):
 	return ' '.join(tokens)
 
 
-def make_instances_from_dataset(dataset):
+def make_instances_from_dataset(dataset, has_labels=True, question_keys_and_tags=None):
 	# Create instances for all each task.
 	# we will store instances for each task separately in a dictionary
-	task_instances_dict = dict()
 
-	# All the questions with interesting annotations start with prefix "part2-" and end with suffix ".Response"
-	# Extract all the interesting questions' annotation keys and their corresponding question-tags
-	question_keys_and_tags = list()  # list of tuples of the format (<tag>, <dict-key>)
-	# Extract the keys and tags from first annotation in the dataset
-	dummy_annotation = dataset[0]['annotation']
-	for key in dummy_annotation.keys():
-		if key.startswith("part2-") and key.endswith(".Response"):
-			question_tag = key.replace("part2-", "").replace(".Response", "")
-			question_keys_and_tags.append((question_tag, key))
-	# Sort the question keys to have a fixed ordering
-	question_keys_and_tags.sort(key=lambda tup: tup[0])
+	if question_keys_and_tags is None:
+		# All the questions with interesting annotations start with prefix "part2-" and end with suffix ".Response"
+		# Extract all the interesting questions' annotation keys and their corresponding question-tags
+		question_keys_and_tags = list()  # list of tuples of the format (<tag>, <dict-key>)
+		# Extract the keys and tags from first annotation in the dataset
+		dummy_annotation = dataset[0]['annotation']
+		for key in dummy_annotation.keys():
+			if key.startswith("part2-") and key.endswith(".Response"):
+				question_tag = key.replace("part2-", "").replace(".Response", "")
+				question_keys_and_tags.append((question_tag, key))
+		# Sort the question keys to have a fixed ordering
+		question_keys_and_tags.sort(key=lambda tup: tup[0])
 	# print(question_keys_and_tags)
 	# exit()
 	question_tags = [question_tag for question_tag, question_key in question_keys_and_tags]
@@ -158,7 +161,8 @@ def make_instances_from_dataset(dataset):
 	for annotated_data in dataset:
 		# We will take one annotation and generate who instances based on the chunks
 		id = annotated_data['id']
-		annotation = annotated_data['annotation']
+		if has_labels:
+			annotation = annotated_data['annotation']
 		text = annotated_data['text'].strip()
 		candidate_chunks_offsets = annotated_data['candidate_chunks_offsets']
 		candidate_chunks_from_text = [text[c[0]:c[1]] for c in candidate_chunks_offsets]
@@ -253,24 +257,25 @@ def make_instances_from_dataset(dataset):
 		chunk_char_offsets_to_token_idxs_mapping = {(offset[0], offset[1]): (c[0], c[1]) for offset, c in
 																								zip(candidate_chunks_offsets,
 																										candidate_chunks_offsets_from_tweet_tokens)}
-		# print(chunk_char_offsets_to_token_idxs_mapping)
-		annotation_tweet_tokens = dict()
-		for key, value in annotation.items():
-			# print(key, value)
-			if value == "NO_CONSENSUS":
-				new_assignments = ["Not Specified"]
-			else:
-				new_assignments = list()
-				for assignment in value:
-					if type(assignment) == list:
-						# get the candidate_chunk from tweet_tokens
-						# print(chunk_char_offsets_to_token_idxs_mapping.keys())
-						gold_chunk_token_idxs = chunk_char_offsets_to_token_idxs_mapping[tuple(assignment)]
-						new_assignment = ' '.join(tweet_tokens[gold_chunk_token_idxs[0]:gold_chunk_token_idxs[1]])
-						new_assignments.append(new_assignment)
-					else:
-						new_assignments.append(assignment)
-			annotation_tweet_tokens[key] = new_assignments
+		if has_labels:
+			# print(chunk_char_offsets_to_token_idxs_mapping)
+			annotation_tweet_tokens = dict()
+			for key, value in annotation.items():
+				# print(key, value)
+				if value == "NO_CONSENSUS":
+					new_assignments = ["Not Specified"]
+				else:
+					new_assignments = list()
+					for assignment in value:
+						if type(assignment) == list:
+							# get the candidate_chunk from tweet_tokens
+							# print(chunk_char_offsets_to_token_idxs_mapping.keys())
+							gold_chunk_token_idxs = chunk_char_offsets_to_token_idxs_mapping[tuple(assignment)]
+							new_assignment = ' '.join(tweet_tokens[gold_chunk_token_idxs[0]:gold_chunk_token_idxs[1]])
+							new_assignments.append(new_assignment)
+						else:
+							new_assignments.append(assignment)
+				annotation_tweet_tokens[key] = new_assignments
 
 		# print(annotation)
 		# print(annotation_tweet_tokens)
@@ -329,83 +334,97 @@ def make_instances_from_dataset(dataset):
 					current_candidate_chunks.add(candidate_chunk)
 				# assert candidate_chunk == text[chunk_start_text_id:chunk_end_text_id+1]
 
-				# Find gold labels for the current question and candidate chunk
-				if question_tag in ["relation", "gender_male", "gender_female", "believe", "binary-relation", "binary-symptoms",
-														"symptoms", "opinion"]:
-					# If the question is a yes/no question. It is for the name candidate chunk
-					special_tagged_chunks = get_tagged_label_for_key_from_annotation(question_key, annotation_tweet_tokens)
-					try:
-						assert len(special_tagged_chunks) == 1
-					except AssertionError:
-						logging.error(f"for question_tag {question_tag} the special_tagged_chunks = {special_tagged_chunks}")
-						exit()
-					tagged_label = special_tagged_chunks[0]
-					if tagged_label == "No":
-						tagged_label = "Not Specified"
-					if question_tag in ["gender_male", "gender_female"]:
-						gender = "Male" if question_tag == "gender_male" else "Female"
-						if gender == tagged_label:
+				if has_labels:
+					# Find gold labels for the current question and candidate chunk
+					if question_tag in ["relation", "gender_male", "gender_female", "believe", "binary-relation", "binary-symptoms",
+															"symptoms", "opinion"]:
+						# If the question is a yes/no question. It is for the name candidate chunk
+						special_tagged_chunks = get_tagged_label_for_key_from_annotation(question_key, annotation_tweet_tokens)
+						try:
+							assert len(special_tagged_chunks) == 1
+						except AssertionError:
+							logging.error(f"for question_tag {question_tag} the special_tagged_chunks = {special_tagged_chunks}")
+							exit()
+						tagged_label = special_tagged_chunks[0]
+						if tagged_label == "No":
+							tagged_label = "Not Specified"
+						if question_tag in ["gender_male", "gender_female"]:
+							gender = "Male" if question_tag == "gender_male" else "Female"
+							if gender == tagged_label:
+								special_question_label = get_label_from_tagged_label(tagged_label)
+							else:
+								special_question_label = 0
+						else:
 							special_question_label = get_label_from_tagged_label(tagged_label)
-						else:
-							special_question_label = 0
-					else:
-						special_question_label = get_label_from_tagged_label(tagged_label)
 
-					if question_tag == "opinion":
-						# question_label, tagged_chunks = get_label_for_key_from_annotation("part2-who_cure.Response", annotation_tweet_tokens, candidate_chunk)
-						tagged_chunks = []
-						if candidate_chunk == "AUTHOR OF THE TWEET":
-							question_label = 1
-							tagged_chunks.append("AUTHOR OF THE TWEET")
+						if question_tag == "opinion":
+							# question_label, tagged_chunks = get_label_for_key_from_annotation("part2-who_cure.Response", annotation_tweet_tokens, candidate_chunk)
+							tagged_chunks = []
+							if candidate_chunk == "AUTHOR OF THE TWEET":
+								question_label = 1
+								tagged_chunks.append("AUTHOR OF THE TWEET")
+							else:
+								question_label = 0
 						else:
-							question_label = 0
+							question_label, tagged_chunks = get_label_for_key_from_annotation("part2-name.Response",
+																																								annotation_tweet_tokens, candidate_chunk)
+						question_label = question_label & special_question_label
+						if question_label == 0:
+							tagged_chunks = []
 					else:
-						question_label, tagged_chunks = get_label_for_key_from_annotation("part2-name.Response",
-																																							annotation_tweet_tokens, candidate_chunk)
-					question_label = question_label & special_question_label
-					if question_label == 0:
-						tagged_chunks = []
-				else:
-					question_label, tagged_chunks = get_label_for_key_from_annotation(question_key, annotation_tweet_tokens,
-																																						candidate_chunk)
+						question_label, tagged_chunks = get_label_for_key_from_annotation(question_key, annotation_tweet_tokens,
+																																							candidate_chunk)
 				# if question_tag == "close_contact" and question_label == 1:
 				# 	print(candidate_chunk, annotation_tweet_tokens[question_key], question_label)
 
 				# Add instance
 				tokenized_tweet = ' '.join(final_tweet_tokens)
-				# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id :: tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-				task_instances_dict[question_tag].append((text, candidate_chunk, candidate_chunk_id, chunk_start_text_id,
-																									chunk_end_text_id, tokenized_tweet, ' '.join(
-					final_tweet_tokens[:chunk_start_id] + [Q_TOKEN] + final_tweet_tokens[chunk_end_id:]), tagged_chunks,
-																									question_label))
-				# Update statistics for data analysis
-				# if (tagged_chunks and len(tagged_chunks) == 1 and tagged_chunks[0] == "Not Specified") or question_label == 0:
-				gold_labels_stats[question_tag].setdefault(question_label, 0)
-				gold_labels_stats[question_tag][question_label] += 1
-				gold_labels_unique_tweets[question_tag].setdefault(question_label, set())
-				gold_labels_unique_tweets[question_tag][question_label].add(tokenized_tweet)
+
+				tokenized_tweet_with_masked_chunk = ' '.join(
+					final_tweet_tokens[:chunk_start_id] + [Q_TOKEN] + final_tweet_tokens[chunk_end_id:]
+				)
+				# text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label
+				instance = {
+					'text': text,
+					'chunk': candidate_chunk,
+					'chunk_id': candidate_chunk_id,
+					'chunk_start_text_id': chunk_start_text_id,
+					'chunk_end_text_id': chunk_end_text_id,
+					'tokenized_tweet': tokenized_tweet,
+					'tokenized_tweet_with_masked_chunk': tokenized_tweet_with_masked_chunk,
+					'doc_id': id
+				}
+				if has_labels:
+					instance['gold_chunk'] = tagged_chunks
+					instance['label'] = question_label
+				task_instances_dict[question_tag].append(instance)
+				if has_labels:
+					# Update statistics for data analysis
+					gold_labels_stats[question_tag].setdefault(question_label, 0)
+					gold_labels_stats[question_tag][question_label] += 1
+					gold_labels_unique_tweets[question_tag].setdefault(question_label, set())
+					gold_labels_unique_tweets[question_tag][question_label].add(tokenized_tweet)
 	logging.info(f"Total skipped chunks:{skipped_chunks}\t n_question tags:{len(question_keys_and_tags)}")
 
 	# Convert gold_labels_unique_tweets from set of tweets to counts
+	if has_labels:
+		for question_tag, question_key in question_keys_and_tags:
+			label_unique_tweets = gold_labels_unique_tweets[question_tag]
+			label_unique_tweets_counts = dict()
+			for label, tweets in label_unique_tweets.items():
+				label_unique_tweets_counts[label] = len(tweets)
+			gold_labels_unique_tweets[question_tag] = label_unique_tweets_counts
 
-	for question_tag, question_key in question_keys_and_tags:
-		label_unique_tweets = gold_labels_unique_tweets[question_tag]
-		label_unique_tweets_counts = dict()
-		for label, tweets in label_unique_tweets.items():
-			label_unique_tweets_counts[label] = len(tweets)
-		gold_labels_unique_tweets[question_tag] = label_unique_tweets_counts
+		# Log the label-wise total statistics
+		logging.info("Gold label instances statistics:")
+		log_list(gold_labels_stats.items())
+		logging.info("Gold label tweets statistics:")
+		log_list(gold_labels_unique_tweets.items())
+		tag_statistics = (gold_labels_stats, gold_labels_unique_tweets)
 
-	# Log the label-wise total statistics
-	logging.info("Gold label instances statistics:")
-	log_list(gold_labels_stats.items())
-	logging.info("Gold label tweets statistics:")
-	log_list(gold_labels_unique_tweets.items())
-	tag_statistics = (gold_labels_stats, gold_labels_unique_tweets)
+	else:
+		tag_statistics = (None, None)
 
-	# TODO: return instances header to save in pickle for later
-	# TODO: Think of somehow saving the data statistics somewhere. Maybe save that in pickle as well
-	question_tag_gold_chunks = [qt + "_gold_chunks" for qt in question_tags]
-	question_tag_gold_labels = [qt + "_label" for qt in question_tags]
 	return task_instances_dict, tag_statistics, question_keys_and_tags
 
 
@@ -415,7 +434,7 @@ def main():
 	logging.info(f"Total annotations:{len(dataset)}")
 	logging.info(f"Creating labeled data instances from annotations...")
 	print(dataset[0].keys())
-	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset)
+	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset, not args.predict)
 	# Save in pickle file
 	logging.info(f"Saving all the instances, statistics and labels in {args.save_file}")
 	save_in_pickle((task_instances_dict, tag_statistics, question_keys_and_tags), args.save_file)

@@ -11,6 +11,7 @@ parser.add_argument("-pm", "--pre_model", help="Pre-trained model to initialize.
 parser.add_argument("-mf", "--model_flags", help="Flags for model config.", type=str, required=True)
 parser.add_argument("-o", "--output_dir", help="Path to the output directory where we will save all the model results", type=str, required=True)
 parser.add_argument("-rt", "--retrain", help="Flag that will indicate if the model needs to be retrained or loaded from the existing save_directory", action="store_true")
+parser.add_argument("-pd", "--predict", help="Flag that will indicate if we are performing predictions on unlabeled data.", action="store_true", default=False)
 # parser.add_argument("-bs", "--batch_size", help="Train batch size for BERT model", type=int, default=32)
 # parser.add_argument("-e", "--n_epochs", help="Number of epochs", type=int, default=8)
 args = parser.parse_args()
@@ -37,16 +38,16 @@ random.seed(RANDOM_SEED)
 import numpy as np
 
 from sklearn import metrics
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 
 import os
 from tqdm import tqdm
 import time
-import datetime
 
-from utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, save_in_json, get_raw_scores, get_TP_FP_FN
+from utils import log_list, make_dir_if_not_exists, save_in_pickle, load_from_pickle, \
+	get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, \
+	save_in_json, get_raw_scores, get_TP_FP_FN, make_dir_if_not_exists, format_time, \
+	plot_train_loss, get_optimizer_params, log_multitask_data_statistics, split_data_based_on_subtasks, \
+	create_mask
 from hopfield import HopfieldPooling
 
 
@@ -73,23 +74,6 @@ if torch.cuda.is_available():
 else:
 	device = torch.device("cpu")
 	logging.info(f"Using CPU to train")
-
-
-def make_dir_if_not_exists(directory):
-	if not os.path.exists(directory):
-		logging.info("Creating new directory: {}".format(directory))
-		os.makedirs(directory)
-
-
-def format_time(elapsed):
-	'''
-	Takes a time in seconds and returns a string hh:mm:ss
-	'''
-	# Round to the nearest second.
-	elapsed_rounded = int(round((elapsed)))
-	
-	# Format as hh:mm:ss
-	return str(datetime.timedelta(seconds=elapsed_rounded))
 
 
 class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
@@ -261,11 +245,12 @@ class COVID19TaskDataset(Dataset):
 
 
 class TokenizeCollator():
-	def __init__(self, tokenizer, subtasks, entity_start_token_id, entity_end_token_id):
+	def __init__(self, tokenizer, subtasks, entity_start_token_id, entity_end_token_id, predict=False):
 		self.tokenizer = tokenizer
 		self.subtasks = subtasks
 		self.entity_start_token_id = entity_start_token_id
 		self.entity_end_token_id = entity_end_token_id
+		self.predict = predict
 
 	@staticmethod
 	def fix_user_mentions_in_tokenized_tweet(tokenized_tweet):
@@ -284,11 +269,17 @@ class TokenizeCollator():
 		gold_labels = {subtask: list() for subtask in self.subtasks}
 		# text :: candidate_chunk :: candidate_chunk_id :: chunk_start_text_id :: chunk_end_text_id ::
 		# tokenized_tweet :: tokenized_tweet_with_masked_q_token :: tagged_chunks :: question_label
-		chunk_text = []
-		for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, \
-				tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:
+		chunk_texts = []
+		doc_ids = []
+		# for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, \
+		# 		tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in batch:\
+		for example in batch:
+			chunk = example['chunk']
+			tokenized_tweet_with_masked_chunk = example['tokenized_tweet_with_masked_chunk']
+			doc_id = example['doc_id']
 			tokenized_tweet_with_masked_chunk = self.fix_user_mentions_in_tokenized_tweet(tokenized_tweet_with_masked_chunk)
-			chunk_text.append(chunk)
+			chunk_texts.append(chunk)
+			doc_ids.append(doc_id)
 			if chunk in ["AUTHOR OF THE TWEET", "NEAR AUTHOR OF THE TWEET"]:
 				# First element of the text will be considered as AUTHOR OF THE TWEET or NEAR AUTHOR OF THE TWEET
 				bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> </E>")
@@ -298,9 +289,12 @@ class TokenizeCollator():
 			else:
 				bert_model_input_text = tokenized_tweet_with_masked_chunk.replace(Q_TOKEN, "<E> " + chunk + " </E>")
 			all_bert_model_input_texts.append(bert_model_input_text)
-			# Add subtask labels in the gold_labels dictionary
-			for subtask in self.subtasks:
-				gold_labels[subtask].append(subtask_labels_dict[subtask][1])
+
+			if not self.predict:
+				subtasks_labels_dict = example['subtasks_labels_dict']
+				# Add subtask labels in the gold_labels dictionary
+				for subtask in self.subtasks:
+					gold_labels[subtask].append(subtasks_labels_dict[subtask][1])
 		# Tokenize
 		all_bert_model_inputs_tokenized = self.tokenizer.batch_encode_plus(
 			all_bert_model_input_texts,
@@ -338,9 +332,9 @@ class TokenizeCollator():
 			# mask over <E> ... </E>
 			entity_span_masks = create_mask(entity_start_positions, entity_end_positions + 1, input_ids.shape[1])
 
-		# Also extract the gold labels
-		labels = {subtask: torch.LongTensor(subtask_gold_labels) for subtask, subtask_gold_labels in gold_labels.items()}
-		# print(len(batch))
+		if not self.predict:
+			# Also extract the gold labels
+			labels = {subtask: torch.LongTensor(subtask_gold_labels) for subtask, subtask_gold_labels in gold_labels.items()}
 
 		if entity_start_positions.size(0) == 0:
 			# Send entity_start_positions to [CLS]'s position i.e. 0
@@ -351,34 +345,26 @@ class TokenizeCollator():
 
 		# Verify that the number of labels for each subtask is equal to the number of instances
 		for subtask in self.subtasks:
-			try:
-				assert input_ids.size(0) == labels[subtask].size(0)
-			except AssertionError:
-				logging.error(f"Error Bad batch: Incorrect number of labels given for the batch of size: {len(batch)}")
-				logging.error(f"{subtask}, {labels[subtask]}, {labels[subtask].size(0)}")
-				exit()
-		# assert input_ids.size(0) == labels.size(0)
-		return {
+			if not self.predict:
+				try:
+					assert input_ids.size(0) == labels[subtask].size(0)
+				except AssertionError:
+					logging.error(f"Error Bad batch: Incorrect number of labels given for the batch of size: {len(batch)}")
+					logging.error(f"{subtask}, {labels[subtask]}, {labels[subtask].size(0)}")
+					exit()
+		batch_example = {
 			"input_ids": input_ids,
 			"entity_start_positions": entity_start_positions,
 			"entity_end_positions": entity_end_positions,
 			"entity_span_widths": entity_span_widths,
 			"entity_span_masks": entity_span_masks,
 			"attention_mask": attention_mask,
-			"gold_labels": labels,
-			"batch_data": batch,
-			"chunk_text": chunk_text
+			"chunk_texts": chunk_texts,
+			"doc_ids": doc_ids
 		}
-
-
-def create_mask(start_indices, end_indices, seq_len):
-	batch_size = start_indices.shape[0]
-	cols = torch.LongTensor(range(seq_len)).repeat(batch_size, 1)
-	beg = start_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
-	end = end_indices[:, 1].unsqueeze(1).repeat(1, seq_len)
-	mask = cols.ge(beg) & cols.lt(end)
-	mask = mask.float()
-	return mask
+		if not self.predict:
+			batch_example['gold_labels'] = labels
+		return batch_example
 
 
 def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_flag=False, has_labels=True):
@@ -427,58 +413,6 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 					all_labels[subtask].extend(labels[subtask])
 
 	return all_predictions, all_prediction_scores, all_labels
-
-
-def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
-	plt.cla()
-	plt.clf()
-
-	fig, ax = plt.subplots()
-	x = [epoch * len(loss_trajectory) + j + 1 for epoch, loss_trajectory in enumerate(loss_trajectory_per_epoch) for j, avg_loss in enumerate(loss_trajectory) ]
-	x_ticks = [ "(" + str(epoch + 1) + "," + str(j + 1) + ")" for epoch, loss_trajectory in enumerate(loss_trajectory_per_epoch) for j, avg_loss in enumerate(loss_trajectory) ]
-	full_train_trajectory = [avg_loss for epoch, loss_trajectory in enumerate(loss_trajectory_per_epoch) for j, avg_loss in enumerate(loss_trajectory)]
-	ax.plot(x, full_train_trajectory)
-
-	ax.set(xlabel='Epoch, Step', ylabel='Loss',
-			title='Train loss trajectory')
-	step_size = 100
-	ax.xaxis.set_ticks(range(0, len(x_ticks), step_size), x_ticks[::step_size])
-	ax.grid()
-
-	fig.savefig(trajectory_file)
-
-
-def split_data_based_on_subtasks(data, subtasks):
-	# We will split the data into data_instances based on subtask_labels
-	subtasks_data = {subtask: list() for subtask in subtasks}
-	for text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict in data:
-		for subtask in subtasks:
-			subtasks_data[subtask].append((text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtask_labels_dict[subtask][0], subtask_labels_dict[subtask][1]))
-	return subtasks_data
-
-
-def log_multitask_data_statistics(data, subtasks):
-	logging.info(f"Total instances in the data = {len(data)}")
-	# print positive and negative counts for each subtask
-	# print(len(data[0]))
-	pos_counts = {subtask: sum(subtask_labels_dict[subtask][1] for _,_,_,_,_,_,_,subtask_labels_dict in data) for subtask in subtasks}
-	# Log for each subtask
-	neg_counts = dict()
-	for subtask in subtasks:
-		neg_counts[subtask] = len(data) - pos_counts[subtask]
-		logging.info(f"Subtask:{subtask:>15}\tPositive labels = {pos_counts[subtask]}\tNegative labels = {neg_counts[subtask]}")
-	return len(data), pos_counts, neg_counts
-
-
-def get_optimizer_params(model, weight_decay):
-	param_optimizer = list(model.named_parameters())
-	no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-	optimizer_params = [
-		{'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)],
-		 'weight_decay': weight_decay},
-		{'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
-
-	return optimizer_params
 
 
 def main():
@@ -561,6 +495,8 @@ def main():
 	train_dataloader = DataLoader(train_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=True, num_workers=1, collate_fn=tokenize_collator)
 	dev_dataloader = DataLoader(dev_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
 	test_dataloader = DataLoader(test_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
+	# TODO for unlabeled predictions:
+	# predict_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id, predict=True)
 	logging.info("Created train and test dataloaders with batch aggregation")
 
 	# Only retrain if needed
@@ -763,29 +699,33 @@ def main():
 
 	# Find best threshold for each subtask based on dev set performance
 	thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-	test_predicted_labels, test_prediction_scores, test_gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task, True)
+	# test_predicted_labels, test_prediction_scores, test_gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task, True)
 	dev_predicted_labels, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
 
-	best_test_thresholds = {subtask: 0.5 for subtask in model.subtasks}
-	best_dev_thresholds = {subtask: 0.5 for subtask in model.subtasks}
-	best_test_F1s = {subtask: 0.0 for subtask in model.subtasks}
-	best_dev_F1s = {subtask: 0.0 for subtask in model.subtasks}
-	test_subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
-	dev_subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
+	def compute_thresholds(model, data, prediction_scores, threshold_range):
+		best_thresholds = {subtask: 0.5 for subtask in model.subtasks}
+		best_F1s = {subtask: 0.0 for subtask in model.subtasks}
+		subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
 
-	for subtask in model.subtasks:	
-		dev_subtask_data = dev_subtasks_data[subtask]
-		dev_subtask_prediction_scores = dev_prediction_scores[subtask]
-		for t in thresholds:
-			dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores, THRESHOLD=t)
-			dev_subtasks_t_F1_P_Rs[subtask].append((t, dev_F1, dev_P, dev_R, dev_TP + dev_FN, dev_TP, dev_FP, dev_FN))
-			if dev_F1 > best_dev_F1s[subtask]:
-				best_dev_thresholds[subtask] = t
-				best_dev_F1s[subtask] = dev_F1
+		for subtask in model.subtasks:
+			dev_subtask_data = data[subtask]
+			dev_subtask_prediction_scores = prediction_scores[subtask]
+			for t in threshold_range:
+				dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores, THRESHOLD=t)
+				subtasks_t_F1_P_Rs[subtask].append((t, dev_F1, dev_P, dev_R, dev_TP + dev_FN, dev_TP, dev_FP, dev_FN))
+				if dev_F1 > best_F1s[subtask]:
+					best_thresholds[subtask] = t
+					best_F1s[subtask] = dev_F1
+		return best_thresholds, best_F1s, subtasks_t_F1_P_Rs
 
-		logging.info(f"Subtask:{subtask:>15}")
-		log_list(dev_subtasks_t_F1_P_Rs[subtask])
-		logging.info(f"Best Dev Threshold for subtask: {best_dev_thresholds[subtask]}\t Best dev F1: {best_dev_F1s[subtask]}")
+	best_dev_thresholds, best_dev_F1s, dev_subtasks_t_F1_P_Rs = compute_thresholds(
+		model,
+		dev_subtasks_data,
+		dev_prediction_scores,
+		thresholds
+	)
+
+
 
 	# Save the best dev threshold and dev_F1 in results dict
 	results["best_dev_threshold"] = best_dev_thresholds
