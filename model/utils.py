@@ -343,6 +343,37 @@ def get_raw_scores(data, prediction_scores, positive_only=False):
 	return predictions_exact_score, predictions_f1_score, total
 
 
+def get_threshold_predictions(data, prediction_scores, THRESHOLD=0.5):
+	predicted_chunks_for_each_instance = dict()
+	for example, prediction_score in zip(data, prediction_scores):
+		doc_id = example['doc_id']
+		chunk = example['chunk']
+		# print(text)
+		# print(chunk)
+		# print(original_text)
+		# exit()
+		predicted_chunks_for_each_instance.setdefault(doc_id, ('', 0.0, set()))
+		current_predicted_chunk, current_predicted_chunk_score, predicted_chunks = \
+			predicted_chunks_for_each_instance[doc_id]
+
+		if prediction_score > THRESHOLD:
+			# Save this prediction in the predicted chunks
+			predicted_chunks.add(chunk)
+			current_predicted_chunk_score = prediction_score
+			current_predicted_chunk = chunk
+			predicted_chunks_for_each_instance[doc_id] = current_predicted_chunk, current_predicted_chunk_score, predicted_chunks
+		elif prediction_score > current_predicted_chunk_score:
+			# only update the current_predicted_chunk and its score
+			current_predicted_chunk_score = prediction_score
+			current_predicted_chunk = chunk
+			predicted_chunks_for_each_instance[doc_id] = current_predicted_chunk, current_predicted_chunk_score, predicted_chunks
+
+	predicted_chunks = {}
+	for doc_id, (_, _, doc_pred_chunks) in predicted_chunks_for_each_instance.items():
+		predicted_chunks[doc_id] = doc_pred_chunks
+	return predicted_chunks
+
+
 def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
 	predicted_chunks_for_each_instance = dict()
 	# (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label)
@@ -456,7 +487,7 @@ def plot_train_loss(loss_trajectory_per_epoch, trajectory_file):
 	fig.savefig(trajectory_file)
 
 
-def split_data_based_on_subtasks(data, subtasks):
+def split_data_based_on_subtasks(data, subtasks, has_labels=True):
 	# We will split the data into data_instances based on subtask_labels
 	subtasks_data = {subtask: list() for subtask in subtasks}
 	# text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, subtasks_labels_dict
@@ -464,9 +495,10 @@ def split_data_based_on_subtasks(data, subtasks):
 		for subtask in subtasks:
 			# text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk,
 			subtask_example = example.copy()
-			subtask_label = subtask_example['subtasks_labels_dict'][subtask]
-			subtask_example['gold_chunk'] = subtask_label[0]
-			subtask_example['label'] = subtask_label[1]
+			if has_labels:
+				subtask_label = subtask_example['subtasks_labels_dict'][subtask]
+				subtask_example['gold_chunk'] = subtask_label[0]
+				subtask_example['label'] = subtask_label[1]
 			subtasks_data[subtask].append(subtask_example)
 	return subtasks_data
 

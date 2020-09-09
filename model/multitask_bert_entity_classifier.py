@@ -32,6 +32,7 @@ from transformers import BertTokenizer, BertPreTrainedModel, BertModel, BertConf
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 import torch
+from collections import defaultdict
 
 Q_TOKEN = "<Q_TARGET>"
 URL_TOKEN = "<url>"
@@ -51,7 +52,7 @@ from model.utils import log_list, make_dir_if_not_exists, save_in_pickle, load_f
 	get_multitask_instances_for_valid_tasks, split_multitask_instances_in_train_dev_test, log_data_statistics, \
 	save_in_json, get_raw_scores, get_TP_FP_FN, make_dir_if_not_exists, format_time, \
 	plot_train_loss, get_optimizer_params, log_multitask_data_statistics, split_data_based_on_subtasks, \
-	create_mask
+	create_mask, get_threshold_predictions
 from .hopfield import HopfieldPooling
 
 
@@ -436,6 +437,19 @@ def compute_thresholds(model, data, prediction_scores, threshold_range):
 	return best_thresholds, best_F1s, subtasks_t_F1_P_Rs
 
 
+def compute_threshold_predictions(model, data, prediction_scores, thresholds):
+	predicted_chunks = defaultdict(dict)
+	for subtask in model.subtasks:
+		subtask_data = data[subtask]
+		subtask_prediction_scores = prediction_scores[subtask]
+		threshold = thresholds[subtask]
+		subtask_predicted_chunks = get_threshold_predictions(subtask_data, subtask_prediction_scores, THRESHOLD=threshold)
+
+		for doc_id, pred_chunks in subtask_predicted_chunks.items():
+			predicted_chunks[doc_id][subtask] = pred_chunks
+	return predicted_chunks
+
+
 def main():
 	# Read all the data instances
 	task_instances_dict, tag_statistics, question_keys_and_tags = load_from_pickle(args.data_file)
@@ -803,7 +817,57 @@ def main():
 	# run prediction on unlabeld data
 	else:
 		logging.info("Running predictions on unlabeled data...")
+		logging.info("Loading the pred dataset...")
+		task_instances_dict, _, _ = load_from_pickle(args.predict_data_file)
+		pred_data, _ = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics)
 
+		pred_dataset = COVID19TaskDataset(pred_data)
+		logging.info("Loading the pred dataset into Pytorch datasets")
+
+		pred_tokenize_collator = TokenizeCollator(
+			tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id, predict=True)
+		pred_dataloader = DataLoader(
+			pred_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=pred_tokenize_collator)
+		# TODO check if this works without labels
+		pred_subtask_data = split_data_based_on_subtasks(pred_data, model.subtasks, has_labels=False)
+
+		logging.info("Making prediction dataset predictions...")
+		predicted_labels, prediction_scores, _ = make_predictions_on_dataset(
+			pred_dataloader,
+			model,
+			device,
+			args.task + "_pred",
+			True,
+			has_labels=False
+		)
+
+		logging.info("Making dev dataset predictions...")
+		_, dev_prediction_scores, _ = make_predictions_on_dataset(
+			dev_dataloader,
+			model,
+			device,
+			args.task + "_dev",
+			True
+		)
+
+		logging.info("Computing dev thresholds...")
+		thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+		best_dev_thresholds, _, _ = compute_thresholds(
+			model,
+			dev_subtasks_data,
+			dev_prediction_scores,
+			thresholds
+		)
+
+		logging.info("Computing prediction dataset predictions with thresholds...")
+		pred_chunks = compute_threshold_predictions(model, pred_subtask_data, prediction_scores, best_dev_thresholds)
+
+		# TODO save predictions as jsonl at args.predict_file
+		for doc_id, doc_chunks in pred_chunks.items():
+			if len(doc_chunks) > 0:
+				print(doc_id)
+				print(doc_chunks)
+				break
 
 
 if __name__ == '__main__':
