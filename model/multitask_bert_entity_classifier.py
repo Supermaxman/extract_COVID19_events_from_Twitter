@@ -830,6 +830,27 @@ def main():
 		# TODO check if this works without labels
 		pred_subtask_data = split_data_based_on_subtasks(pred_data, model.subtasks, has_labels=False)
 
+		if os.path.exists(results_file):
+			logging.info("Loading dev thresholds...")
+			results = json.load(open(results_file))
+			best_dev_thresholds = results["best_dev_threshold"]
+		else:
+			logging.info("Results file not found, computing dev thresholds...")
+			logging.info("Making dev dataset predictions...")
+			_, dev_prediction_scores, _ = make_predictions_on_dataset(
+				dev_dataloader,
+				model,
+				device,
+				args.task + "_dev"
+			)
+			thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+			best_dev_thresholds, _, _ = compute_thresholds(
+				model,
+				dev_subtasks_data,
+				dev_prediction_scores,
+				thresholds
+			)
+
 		logging.info("Making prediction dataset predictions...")
 		predicted_labels, prediction_scores, _ = make_predictions_on_dataset(
 			pred_dataloader,
@@ -838,28 +859,6 @@ def main():
 			args.task + "_pred",
 			has_labels=False
 		)
-
-		logging.info("Making dev dataset predictions...")
-		_, dev_prediction_scores, _ = make_predictions_on_dataset(
-			dev_dataloader,
-			model,
-			device,
-			args.task + "_dev"
-		)
-
-		if os.path.exists(results_file):
-			logging.info("Loading dev thresholds...")
-			results = json.load(open(results_file))
-			best_dev_thresholds = results["best_dev_threshold"]
-		else:
-			logging.info("Results file not found, computing dev thresholds...")
-			thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-			best_dev_thresholds, _, _ = compute_thresholds(
-				model,
-				dev_subtasks_data,
-				dev_prediction_scores,
-				thresholds
-			)
 
 		logging.info("Computing prediction dataset predictions with thresholds...")
 		pred_chunks = compute_threshold_predictions(model, pred_subtask_data, prediction_scores, best_dev_thresholds)
