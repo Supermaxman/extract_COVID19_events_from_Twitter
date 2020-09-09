@@ -83,7 +83,7 @@ def extract_instances_for_current_subtask(task_instances, sub_task):
 	return task_instances[sub_task]
 
 
-def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
+def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics, has_labels=True):
 	# Extract instances and labels from all the sub-task
 	# Align w.r.t. instances and merge all the sub-task labels
 	subtasks = list()
@@ -105,12 +105,16 @@ def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
 			instance['instance_id'] = instance_id
 			instances[instance_id] = instance
 			text = instance['text']
-			gold_chunk = instance['gold_chunk']
-			label = instance['label']
 			if text not in text_to_subtask_instances:
 				original_text_list.append(text)
 				text_to_subtask_instances[text] = dict()
 			text_to_subtask_instances[text].setdefault(instance_id, dict())
+			if has_labels:
+				gold_chunk = instance['gold_chunk']
+				label = instance['label']
+			else:
+				gold_chunk = None
+				label = None
 			text_to_subtask_instances[text][instance_id][subtask] = (gold_chunk, label)
 			instance_id += 1
 	# print(len(text_to_subtask_instances))

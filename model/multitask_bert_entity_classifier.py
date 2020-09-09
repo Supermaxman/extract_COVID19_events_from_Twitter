@@ -819,7 +819,7 @@ def main():
 		logging.info("Running predictions on unlabeled data...")
 		logging.info("Loading the pred dataset...")
 		task_instances_dict, _, _ = load_from_pickle(args.predict_data_file)
-		pred_data, _ = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics)
+		pred_data, _ = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics, has_labels=False)
 
 		pred_dataset = COVID19TaskDataset(pred_data)
 		logging.info("Loading the pred dataset into Pytorch datasets")
