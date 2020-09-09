@@ -372,9 +372,9 @@ class TokenizeCollator(object):
 		return batch_example
 
 
-def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_flag=False, has_labels=True):
+def make_predictions_on_dataset(dataloader, model, device, dataset_name, hide_progress=False, has_labels=True):
 	# Create tqdm progressbar
-	if dev_flag:
+	if hide_progress:
 		pbar = dataloader
 	else:
 		logging.info(f"Predicting on the dataset {dataset_name}")
@@ -728,6 +728,8 @@ def main():
 	else:
 		logging.info("No training needed.")
 
+	model_config_file = os.path.join(args.output_dir, "model_config.json")
+	results_file = os.path.join(args.output_dir, "results.json")
 	# run test data evaluation
 	if not predict:
 		logging.info("Running test eval on labeled data...")
@@ -806,9 +808,6 @@ def main():
 			N = TP + FN
 			results[subtask]["N"] = N
 
-		# Save model_config and results
-		model_config_file = os.path.join(args.output_dir, "model_config.json")
-		results_file = os.path.join(args.output_dir, "results.json")
 		logging.info(f"Saving model config at {model_config_file}")
 		save_in_json(model_config, model_config_file)
 		logging.info(f"Saving results at {results_file}")
@@ -837,7 +836,6 @@ def main():
 			model,
 			device,
 			args.task + "_pred",
-			True,
 			has_labels=False
 		)
 
@@ -846,18 +844,22 @@ def main():
 			dev_dataloader,
 			model,
 			device,
-			args.task + "_dev",
-			True
+			args.task + "_dev"
 		)
 
-		logging.info("Computing dev thresholds...")
-		thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-		best_dev_thresholds, _, _ = compute_thresholds(
-			model,
-			dev_subtasks_data,
-			dev_prediction_scores,
-			thresholds
-		)
+		if os.path.exists(results_file):
+			logging.info("Loading dev thresholds...")
+			results = json.load(open(results_file))
+			best_dev_thresholds = results["best_dev_threshold"]
+		else:
+			logging.info("Results file not found, computing dev thresholds...")
+			thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+			best_dev_thresholds, _, _ = compute_thresholds(
+				model,
+				dev_subtasks_data,
+				dev_prediction_scores,
+				thresholds
+			)
 
 		logging.info("Computing prediction dataset predictions with thresholds...")
 		pred_chunks = compute_threshold_predictions(model, pred_subtask_data, prediction_scores, best_dev_thresholds)
