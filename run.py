@@ -70,12 +70,10 @@ task_type_to_datapath_dict = {
 
 # REDO_DATA_FLAG = True
 REDO_DATA_FLAG = False
-REDO_FLAG = False
 RETRAIN_FLAG = False
 PREDICT_FLAG = True
 # run_tasks = {"tested_positive", "tested_negative", "can_not_test", "death", "cure"}
 run_tasks = set(args.tasks.split(','))
-# REDO_FLAG = False
 model_type = config['model_type']
 run_name = config['run_name']
 gpu_id = config['gpu_id']
@@ -120,26 +118,25 @@ for taskname, task_dict in task_type_to_datapath_dict.items():
   make_dir_if_not_exists(output_dir)
   results_file = os.path.join(output_dir, "results.json")
   model_config_file = os.path.join(output_dir, "model_config.json")
-  if not os.path.exists(results_file) or REDO_FLAG:
-    # Execute the Bert entity classifier train and test only if the results file doesn't exists
-    # After fixing the USER and URL tags
-    multitask_bert_cmd = f"CUDA_VISIBLE_DEVICES={gpu_id} python -m model.multitask_{model_type}_entity_classifier " \
-      f"-d {processed_out_file} " \
-      f"-t {taskname} " \
-      f"-o {output_dir} " \
-      f"-s saved_models/multitask_{model_type}_{run_name}_entity_classifier_fixed/{taskname} " \
-      f"-pm {pre_model_name} " \
-      f"-mf '{json.dumps(model_flags)}' "
-    if RETRAIN_FLAG:
-      multitask_bert_cmd += " -r"
-    if PREDICT_FLAG:
-      multitask_bert_cmd += f"-p -pd {predict_processed_out_file} -po {predict_file}"
-    logging.info(f"Running: {multitask_bert_cmd}")
-    try:
-      retcode = subprocess.call(multitask_bert_cmd, shell=True)
-    # os.system(multitask_bert_cmd)
-    except KeyboardInterrupt:
-      exit()
+  # Execute the Bert entity classifier train and test only if the results file doesn't exists
+  # After fixing the USER and URL tags
+  multitask_bert_cmd = f"CUDA_VISIBLE_DEVICES={gpu_id} python -m model.multitask_{model_type}_entity_classifier " \
+    f"-d {processed_out_file} " \
+    f"-t {taskname} " \
+    f"-o {output_dir} " \
+    f"-s saved_models/multitask_{model_type}_{run_name}_entity_classifier_fixed/{taskname} " \
+    f"-pm {pre_model_name} " \
+    f"-mf '{json.dumps(model_flags)}' "
+  if RETRAIN_FLAG:
+    multitask_bert_cmd += " -r"
+  if PREDICT_FLAG:
+    multitask_bert_cmd += f"-p -pd {predict_processed_out_file} -po {predict_file}"
+  logging.info(f"Running: {multitask_bert_cmd}")
+  try:
+    retcode = subprocess.call(multitask_bert_cmd, shell=True)
+  # os.system(multitask_bert_cmd)
+  except KeyboardInterrupt:
+    exit()
   if not PREDICT_FLAG:
     #  Read the results from the results json file
     results = load_from_json(results_file)
