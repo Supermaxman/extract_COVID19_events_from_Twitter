@@ -446,7 +446,7 @@ def compute_threshold_predictions(model, data, prediction_scores, thresholds):
 		subtask_predicted_chunks = get_threshold_predictions(subtask_data, subtask_prediction_scores, THRESHOLD=threshold)
 
 		for doc_id, pred_chunks in subtask_predicted_chunks.items():
-			predicted_chunks[doc_id][subtask] = pred_chunks
+			predicted_chunks[doc_id][subtask] = list(pred_chunks)
 	return predicted_chunks
 
 

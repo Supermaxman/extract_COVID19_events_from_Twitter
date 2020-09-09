@@ -372,10 +372,10 @@ def get_threshold_predictions(data, prediction_scores, THRESHOLD=0.5):
 			current_predicted_chunk = chunk
 			predicted_chunks_for_each_instance[doc_id] = current_predicted_chunk, current_predicted_chunk_score, predicted_chunks
 
-	predicted_chunks = {}
+	doc_predicted_chunks = {}
 	for doc_id, (_, _, doc_pred_chunks) in predicted_chunks_for_each_instance.items():
-		predicted_chunks[doc_id] = doc_pred_chunks
-	return predicted_chunks
+		doc_predicted_chunks[doc_id] = doc_pred_chunks
+	return doc_predicted_chunks
 
 
 def get_TP_FP_FN(data, prediction_scores, THRESHOLD=0.5):
