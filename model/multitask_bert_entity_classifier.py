@@ -865,9 +865,10 @@ def main():
 
 		# TODO save predictions as jsonl at args.predict_file
 		for doc_id, doc_chunks in pred_chunks.items():
-			if len(doc_chunks) > 0:
-				print(doc_id)
-				print(doc_chunks)
+			if len(doc_chunks['name']) > 0:
+				print(f'Tweet Id: {doc_id}')
+				for subtask_name, chunks in doc_chunks.items():
+					print(f'{subtask_name}: {chunks}')
 				break
 
 
