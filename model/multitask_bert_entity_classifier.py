@@ -815,61 +815,79 @@ def main():
 
 	# run prediction on unlabeld data
 	else:
-		logging.info("Running predictions on unlabeled data...")
-		logging.info("Loading the pred dataset...")
-		task_instances_dict, _, _ = load_from_pickle(args.predict_data_file)
-		pred_data, _ = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics, has_labels=False)
-
-		pred_dataset = COVID19TaskDataset(pred_data)
-		logging.info("Loading the pred dataset into Pytorch datasets")
-
-		pred_tokenize_collator = TokenizeCollator(
-			tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id, predict=True)
-		pred_dataloader = DataLoader(
-			pred_dataset, batch_size=2*POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=pred_tokenize_collator)
-		# TODO check if this works without labels
-		pred_subtask_data = split_data_based_on_subtasks(pred_data, model.subtasks, has_labels=False)
-
-		if os.path.exists(results_file):
-			logging.info("Loading dev thresholds...")
-			results = json.load(open(results_file))
-			best_dev_thresholds = results["best_dev_threshold"]
+		cache_pred_file = args.predict_file.replace('.jsonl', '-cache.json')
+		if os.path.exists(cache_pred_file):
+			logging.info("Loading prediction dataset predictions from cache...")
+			pred_chunks = json.load(open(cache_pred_file))
 		else:
-			logging.info("Results file not found, computing dev thresholds...")
-			logging.info("Making dev dataset predictions...")
-			_, dev_prediction_scores, _ = make_predictions_on_dataset(
-				dev_dataloader,
+			logging.info("Running predictions on unlabeled data...")
+			logging.info("Loading the pred dataset...")
+			task_instances_dict, _, _ = load_from_pickle(args.predict_data_file)
+			pred_data, _ = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics, has_labels=False)
+
+			pred_dataset = COVID19TaskDataset(pred_data)
+			logging.info("Loading the pred dataset into Pytorch datasets")
+
+			pred_tokenize_collator = TokenizeCollator(
+				tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id, predict=True)
+			pred_dataloader = DataLoader(
+				pred_dataset, batch_size=2 * POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0,
+				collate_fn=pred_tokenize_collator)
+
+			pred_subtask_data = split_data_based_on_subtasks(pred_data, model.subtasks, has_labels=False)
+
+			logging.info("Predictions cache not found, creating predictions...")
+			if os.path.exists(results_file):
+				logging.info("Loading dev thresholds...")
+				results = json.load(open(results_file))
+				best_dev_thresholds = results["best_dev_threshold"]
+			else:
+				logging.info("Results file not found, computing dev thresholds...")
+				logging.info("Making dev dataset predictions...")
+				_, dev_prediction_scores, _ = make_predictions_on_dataset(
+					dev_dataloader,
+					model,
+					device,
+					args.task + "_dev"
+				)
+				thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+				best_dev_thresholds, _, _ = compute_thresholds(
+					model,
+					dev_subtasks_data,
+					dev_prediction_scores,
+					thresholds
+				)
+
+			logging.info("Making prediction dataset predictions...")
+			predicted_labels, prediction_scores, _ = make_predictions_on_dataset(
+				pred_dataloader,
 				model,
 				device,
-				args.task + "_dev"
-			)
-			thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-			best_dev_thresholds, _, _ = compute_thresholds(
-				model,
-				dev_subtasks_data,
-				dev_prediction_scores,
-				thresholds
+				args.task + "_pred",
+				has_labels=False
 			)
 
-		logging.info("Making prediction dataset predictions...")
-		predicted_labels, prediction_scores, _ = make_predictions_on_dataset(
-			pred_dataloader,
-			model,
-			device,
-			args.task + "_pred",
-			has_labels=False
-		)
+			logging.info("Computing prediction dataset predictions with thresholds...")
+			pred_chunks = compute_threshold_predictions(model, pred_subtask_data, prediction_scores, best_dev_thresholds)
 
-		logging.info("Computing prediction dataset predictions with thresholds...")
-		pred_chunks = compute_threshold_predictions(model, pred_subtask_data, prediction_scores, best_dev_thresholds)
+			with open(cache_pred_file, 'w') as f:
+				json.dump(pred_subtask_data, f)
 
-		# TODO save predictions as jsonl at args.predict_file
-		for doc_id, doc_chunks in pred_chunks.items():
-			if len(doc_chunks['name']) > 0:
-				print(f'Tweet Id: {doc_id}')
-				for subtask_name, chunks in doc_chunks.items():
-					print(f'{subtask_name}: {chunks}')
-				break
+		with open(args.predict_file, 'w') as f:
+			# save predictions as jsonl at args.predict_file
+			for doc_id, doc_chunks in pred_chunks.items():
+				# TODO not correct, need to properly do this for all subtasks
+				subtask_predictions = {}
+				for subtask in subtasks_list:
+					subtask_chunks = list(doc_chunks[subtask])
+					if len(subtask_chunks) == 0:
+						subtask_chunks.append('Not Specified')
+					subtask_predictions[f'part2-{subtask}.Response'] = subtask_chunks
+				doc_predictions = {
+					'id': doc_id,
+					'predicted_annotation': subtask_predictions
+				}
+				f.write(json.dumps(doc_predictions) + '\n')
 
 
 if __name__ == '__main__':
