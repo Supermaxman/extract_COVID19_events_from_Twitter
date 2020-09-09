@@ -17,6 +17,7 @@ parser.add_argument("-pd", "--predict", help="Flag that will indicate if we are 
 args = parser.parse_args()
 
 pre_model_name = args.pre_model
+predict = args.predict
 model_flags = json.loads(args.model_flags)
 batch_size = model_flags['batch_size']
 POSSIBLE_BATCH_SIZE = model_flags['possible_batch_size']
@@ -70,10 +71,10 @@ np.random.seed(RANDOM_SEED)
 
 if torch.cuda.is_available():
 	device = torch.device("cuda")
-	logging.info(f"Using GPU{torch.cuda.get_device_name(0)} to train")
+	logging.info(f"Using GPU{torch.cuda.get_device_name(0)}")
 else:
 	device = torch.device("cpu")
-	logging.info(f"Using CPU to train")
+	logging.info(f"Using CPU")
 
 
 class MultiTaskBertForCovidEntityClassification(BertPreTrainedModel):
@@ -244,7 +245,7 @@ class COVID19TaskDataset(Dataset):
 		return self.nsamples
 
 
-class TokenizeCollator():
+class TokenizeCollator(object):
 	def __init__(self, tokenizer, subtasks, entity_start_token_id, entity_end_token_id, predict=False):
 		self.tokenizer = tokenizer
 		self.subtasks = subtasks
@@ -413,6 +414,23 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, dev_fla
 					all_labels[subtask].extend(labels[subtask])
 
 	return all_predictions, all_prediction_scores, all_labels
+
+
+def compute_thresholds(model, data, prediction_scores, threshold_range):
+	best_thresholds = {subtask: 0.5 for subtask in model.subtasks}
+	best_F1s = {subtask: 0.0 for subtask in model.subtasks}
+	subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
+
+	for subtask in model.subtasks:
+		dev_subtask_data = data[subtask]
+		dev_subtask_prediction_scores = prediction_scores[subtask]
+		for t in threshold_range:
+			dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores, THRESHOLD=t)
+			subtasks_t_F1_P_Rs[subtask].append((t, dev_F1, dev_P, dev_R, dev_TP + dev_FN, dev_TP, dev_FP, dev_FN))
+			if dev_F1 > best_F1s[subtask]:
+				best_thresholds[subtask] = t
+				best_F1s[subtask] = dev_F1
+	return best_thresholds, best_F1s, subtasks_t_F1_P_Rs
 
 
 def main():
@@ -691,108 +709,97 @@ def main():
 		# TODO: Plot the validation performance
 		# Save dev_subtasks_validation_statistics
 	else:
-		logging.info("No training needed. Directly going to evaluation!")
+		logging.info("No training needed.")
 
-	# Save the model name in the model_config file
-	model_config["model"] = "MultiTaskBertForCovidEntityClassification"
-	model_config["epochs"] = epochs
+	# run test data evaluation
+	if not predict:
+		logging.info("Running test eval on labeled data...")
+		# Save the model name in the model_config file
+		model_config["model"] = "MultiTaskBertForCovidEntityClassification"
+		model_config["epochs"] = epochs
 
-	# Find best threshold for each subtask based on dev set performance
-	thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-	# test_predicted_labels, test_prediction_scores, test_gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task, True)
-	dev_predicted_labels, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
+		# Find best threshold for each subtask based on dev set performance
+		thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+		# test_predicted_labels, test_prediction_scores, test_gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task, True)
+		dev_predicted_labels, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
 
-	def compute_thresholds(model, data, prediction_scores, threshold_range):
-		best_thresholds = {subtask: 0.5 for subtask in model.subtasks}
-		best_F1s = {subtask: 0.0 for subtask in model.subtasks}
-		subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
+		best_dev_thresholds, best_dev_F1s, dev_subtasks_t_F1_P_Rs = compute_thresholds(
+			model,
+			dev_subtasks_data,
+			dev_prediction_scores,
+			thresholds
+		)
 
+		# Save the best dev threshold and dev_F1 in results dict
+		results["best_dev_threshold"] = best_dev_thresholds
+		results["best_dev_F1s"] = best_dev_F1s
+		results["dev_t_F1_P_Rs"] = dev_subtasks_t_F1_P_Rs
+
+		# Evaluate on Test
+		logging.info("Testing on test dataset")
+
+		predicted_labels, prediction_scores, gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task)
+
+		# Test
 		for subtask in model.subtasks:
-			dev_subtask_data = data[subtask]
-			dev_subtask_prediction_scores = prediction_scores[subtask]
-			for t in threshold_range:
-				dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores, THRESHOLD=t)
-				subtasks_t_F1_P_Rs[subtask].append((t, dev_F1, dev_P, dev_R, dev_TP + dev_FN, dev_TP, dev_FP, dev_FN))
-				if dev_F1 > best_F1s[subtask]:
-					best_thresholds[subtask] = t
-					best_F1s[subtask] = dev_F1
-		return best_thresholds, best_F1s, subtasks_t_F1_P_Rs
+			logging.info(f"Testing the trained classifier on subtask: {subtask}")
+			# print(len(test_dataloader))
+			# print(len(prediction_scores[subtask]))
+			# print(len(test_subtasks_data[subtask]))
+			results[subtask] = dict()
+			cm = metrics.confusion_matrix(gold_labels[subtask], predicted_labels[subtask])
+			classification_report = metrics.classification_report(gold_labels[subtask], predicted_labels[subtask], output_dict=True)
+			logging.info(cm)
+			logging.info(metrics.classification_report(gold_labels[subtask], predicted_labels[subtask]))
+			results[subtask]["CM"] = cm.tolist()			# Storing it as list of lists instead of numpy.ndarray
+			results[subtask]["Classification Report"] = classification_report
 
-	best_dev_thresholds, best_dev_F1s, dev_subtasks_t_F1_P_Rs = compute_thresholds(
-		model,
-		dev_subtasks_data,
-		dev_prediction_scores,
-		thresholds
-	)
+			# SQuAD style EM and F1 evaluation for all test cases and for positive test cases (i.e. for cases where annotators had a gold annotation)
+			EM_score, F1_score, total = get_raw_scores(test_subtasks_data[subtask], prediction_scores[subtask])
+			logging.info("Word overlap based SQuAD evaluation style metrics:")
+			logging.info(f"Total number of cases: {total}")
+			logging.info(f"EM_score: {EM_score:.4f}")
+			logging.info(f"F1_score: {F1_score:.4f}")
+			results[subtask]["SQuAD_EM"] = EM_score
+			results[subtask]["SQuAD_F1"] = F1_score
+			results[subtask]["SQuAD_total"] = total
+			pos_EM_score, pos_F1_score, pos_total = get_raw_scores(test_subtasks_data[subtask], prediction_scores[subtask], positive_only=True)
+			logging.info(f"Total number of Positive cases: {pos_total}")
+			logging.info(f"Pos. EM_score: {pos_EM_score:.4f}")
+			logging.info(f"Pos. F1_score: {pos_F1_score:.4f}")
+			results[subtask]["SQuAD_Pos. EM"] = pos_EM_score
+			results[subtask]["SQuAD_Pos. F1"] = pos_F1_score
+			results[subtask]["SQuAD_Pos. EM_F1_total"] = pos_total
 
+			# New evaluation suggested by Alan
+			F1, P, R, TP, FP, FN = get_TP_FP_FN(test_subtasks_data[subtask], prediction_scores[subtask], THRESHOLD=best_dev_thresholds[subtask])
+			logging.info("New evaluation scores:")
+			logging.info(f"F1: {F1:.4f}")
+			logging.info(f"Precision: {P:.4f}")
+			logging.info(f"Recall: {R:.4f}")
+			logging.info(f"True Positive: {TP:.0f}")
+			logging.info(f"False Positive: {FP:.0f}")
+			logging.info(f"False Negative: {FN:.0f}")
+			results[subtask]["F1"] = F1
+			results[subtask]["P"] = P
+			results[subtask]["R"] = R
+			results[subtask]["TP"] = TP
+			results[subtask]["FP"] = FP
+			results[subtask]["FN"] = FN
+			N = TP + FN
+			results[subtask]["N"] = N
 
+		# Save model_config and results
+		model_config_file = os.path.join(args.output_dir, "model_config.json")
+		results_file = os.path.join(args.output_dir, "results.json")
+		logging.info(f"Saving model config at {model_config_file}")
+		save_in_json(model_config, model_config_file)
+		logging.info(f"Saving results at {results_file}")
+		save_in_json(results, results_file)
 
-	# Save the best dev threshold and dev_F1 in results dict
-	results["best_dev_threshold"] = best_dev_thresholds
-	results["best_dev_F1s"] = best_dev_F1s
-	results["dev_t_F1_P_Rs"] = dev_subtasks_t_F1_P_Rs
-
-	# Evaluate on Test
-	logging.info("Testing on test dataset")
-
-	predicted_labels, prediction_scores, gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task)
-	
-	# Test 
-	for subtask in model.subtasks:
-		logging.info(f"Testing the trained classifier on subtask: {subtask}")
-		# print(len(test_dataloader))
-		# print(len(prediction_scores[subtask]))
-		# print(len(test_subtasks_data[subtask]))
-		results[subtask] = dict()
-		cm = metrics.confusion_matrix(gold_labels[subtask], predicted_labels[subtask])
-		classification_report = metrics.classification_report(gold_labels[subtask], predicted_labels[subtask], output_dict=True)
-		logging.info(cm)
-		logging.info(metrics.classification_report(gold_labels[subtask], predicted_labels[subtask]))
-		results[subtask]["CM"] = cm.tolist()			# Storing it as list of lists instead of numpy.ndarray
-		results[subtask]["Classification Report"] = classification_report
-
-		# SQuAD style EM and F1 evaluation for all test cases and for positive test cases (i.e. for cases where annotators had a gold annotation)
-		EM_score, F1_score, total = get_raw_scores(test_subtasks_data[subtask], prediction_scores[subtask])
-		logging.info("Word overlap based SQuAD evaluation style metrics:")
-		logging.info(f"Total number of cases: {total}")
-		logging.info(f"EM_score: {EM_score:.4f}")
-		logging.info(f"F1_score: {F1_score:.4f}")
-		results[subtask]["SQuAD_EM"] = EM_score
-		results[subtask]["SQuAD_F1"] = F1_score
-		results[subtask]["SQuAD_total"] = total
-		pos_EM_score, pos_F1_score, pos_total = get_raw_scores(test_subtasks_data[subtask], prediction_scores[subtask], positive_only=True)
-		logging.info(f"Total number of Positive cases: {pos_total}")
-		logging.info(f"Pos. EM_score: {pos_EM_score:.4f}")
-		logging.info(f"Pos. F1_score: {pos_F1_score:.4f}")
-		results[subtask]["SQuAD_Pos. EM"] = pos_EM_score
-		results[subtask]["SQuAD_Pos. F1"] = pos_F1_score
-		results[subtask]["SQuAD_Pos. EM_F1_total"] = pos_total
-
-		# New evaluation suggested by Alan
-		F1, P, R, TP, FP, FN = get_TP_FP_FN(test_subtasks_data[subtask], prediction_scores[subtask], THRESHOLD=best_dev_thresholds[subtask])
-		logging.info("New evaluation scores:")
-		logging.info(f"F1: {F1:.4f}")
-		logging.info(f"Precision: {P:.4f}")
-		logging.info(f"Recall: {R:.4f}")
-		logging.info(f"True Positive: {TP:.0f}")
-		logging.info(f"False Positive: {FP:.0f}")
-		logging.info(f"False Negative: {FN:.0f}")
-		results[subtask]["F1"] = F1
-		results[subtask]["P"] = P
-		results[subtask]["R"] = R
-		results[subtask]["TP"] = TP
-		results[subtask]["FP"] = FP
-		results[subtask]["FN"] = FN
-		N = TP + FN
-		results[subtask]["N"] = N
-
-	# Save model_config and results
-	model_config_file = os.path.join(args.output_dir, "model_config.json")
-	results_file = os.path.join(args.output_dir, "results.json")
-	logging.info(f"Saving model config at {model_config_file}")
-	save_in_json(model_config, model_config_file)
-	logging.info(f"Saving results at {results_file}")
-	save_in_json(results, results_file)
+	# run prediction on unlabeld data
+	else:
+		logging.info("Running predictions on unlabeled data...")
 
 
 if __name__ == '__main__':

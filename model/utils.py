@@ -99,23 +99,14 @@ def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics):
 	instances = {}
 	for subtask in subtasks:
 		# get the instances for current subtask and add it to a set
-		for example in task_instances[subtask]:
+		for instance in task_instances[subtask]:
 			# text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label
 			# instance = (text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk)
-			instance = {
-				'text': example['text'],
-				'chunk': example['chunk'],
-				'chunk_id': example['chunk_id'],
-				'chunk_start_text_id': example['chunk_start_text_id'],
-				'chunk_end_text_id': example['chunk_end_text_id'],
-				'tokenized_tweet': example['tokenized_tweet'],
-				'tokenized_tweet_with_masked_chunk': example['tokenized_tweet_with_masked_chunk'],
-				'instance_id': instance_id
-			}
+			instance['instance_id'] = instance_id
 			instances[instance_id] = instance
-			text = example['text']
-			gold_chunk = example['gold_chunk']
-			label = example['label']
+			text = instance['text']
+			gold_chunk = instance['gold_chunk']
+			label = instance['label']
 			if text not in text_to_subtask_instances:
 				original_text_list.append(text)
 				text_to_subtask_instances[text] = dict()
