@@ -826,7 +826,7 @@ def main():
 		pred_tokenize_collator = TokenizeCollator(
 			tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id, predict=True)
 		pred_dataloader = DataLoader(
-			pred_dataset, batch_size=4*POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=pred_tokenize_collator)
+			pred_dataset, batch_size=2*POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=pred_tokenize_collator)
 		# TODO check if this works without labels
 		pred_subtask_data = split_data_based_on_subtasks(pred_data, model.subtasks, has_labels=False)
 
