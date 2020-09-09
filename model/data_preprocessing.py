@@ -5,7 +5,7 @@ import argparse
 import re
 import json
 import logging
-from utils import log_list, print_list, save_in_pickle
+from .utils import log_list, print_list, save_in_pickle, load_from_pickle
 
 logging.basicConfig()
 logging.getLogger().setLevel(logging.INFO)
@@ -18,7 +18,8 @@ parser.add_argument("-s", "--save_file", help="Path to the Instances, Statistics
 										required=True)
 parser.add_argument("-pd", "--predict", help="Flag that will indicate if we are performing predictions on unlabeled data.", action="store_true",
 										default=False)
-
+parser.add_argument("-ts", "--train_save_file", help="Path to the Instances, Statistics and Header pickle save file", type=str,
+										required=False)
 args = parser.parse_args()
 
 
@@ -434,7 +435,10 @@ def main():
 	logging.info(f"Total annotations:{len(dataset)}")
 	logging.info(f"Creating labeled data instances from annotations...")
 	print(dataset[0].keys())
-	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset, not args.predict)
+	question_keys_and_tags = None
+	if args.predict:
+		_, _, question_keys_and_tags = load_from_pickle(args.train_save_file)
+	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset, not args.predict, question_keys_and_tags)
 	# Save in pickle file
 	logging.info(f"Saving all the instances, statistics and labels in {args.save_file}")
 	save_in_pickle((task_instances_dict, tag_statistics, question_keys_and_tags), args.save_file)
