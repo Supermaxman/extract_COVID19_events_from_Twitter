@@ -895,7 +895,7 @@ def main():
 				)
 
 			logging.info("Making prediction dataset predictions...")
-			predicted_labels, prediction_scores, _ = make_predictions_on_dataset(
+			_, prediction_scores, _ = make_predictions_on_dataset(
 				pred_dataloader,
 				model,
 				device,
@@ -909,6 +909,7 @@ def main():
 			with open(cache_pred_file, 'w') as f:
 				json.dump(pred_chunks, f)
 
+		logging.info("Writing prediction dataset predictions to file...")
 		reduced_subtasks = []
 		for subtask in subtasks_list:
 			if subtask == 'gender_female':
@@ -1007,6 +1008,8 @@ def main():
 					'predicted_annotation': subtask_predictions
 				}
 				f.write(json.dumps(doc_predictions) + '\n')
+
+		logging.info("Done!")
 
 
 if __name__ == '__main__':

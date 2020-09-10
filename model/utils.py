@@ -351,7 +351,7 @@ def get_threshold_predictions(data, prediction_scores, THRESHOLD=0.5):
 	predicted_chunks_for_each_instance = dict()
 	for example, prediction_score in zip(data, prediction_scores):
 		doc_id = example['doc_id']
-		chunk = example['chunk']
+		chunk = example['original_chunk']
 		# print(text)
 		# print(chunk)
 		# print(original_text)
