@@ -458,7 +458,7 @@ def compute_threshold_predictions(model, data, prediction_scores, thresholds):
 
 def remove_subtask(subtask, chunks):
 	if subtask in chunks:
-		del chunks['subtask']
+		del chunks[subtask]
 
 
 def replace_binary(subtask, chunks, pos_chunk, neg_chunk):
