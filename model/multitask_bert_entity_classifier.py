@@ -450,6 +450,42 @@ def compute_threshold_predictions(model, data, prediction_scores, thresholds):
 	return predicted_chunks
 
 
+def replace_binary(subtask, chunks, pos_chunk, neg_chunk):
+	if subtask in chunks:
+		sub_chunks = chunks[subtask]
+		if len(sub_chunks) > 0:
+			chunks[subtask] = pos_chunk
+		else:
+			chunks[subtask] = neg_chunk
+
+
+def replace_i(subtask, chunks):
+	if subtask in chunks:
+		t_chunks = chunks[subtask]
+		modified_t_chunks = []
+		for chunk in t_chunks:
+			# TODO consider other variations of "I"
+			check_chunk = chunk.lower()
+			if check_chunk in {"i", "i'm"}:
+				chunk = 'AUTHOR OF THE TWEET'
+			modified_t_chunks.append(chunk)
+		chunks[subtask] = modified_t_chunks
+
+
+def merge_subtasks(subtask_a, subtask_b, merged_subtask, chunks, a_chunk, b_chunk, neg_chunk):
+	if subtask_a in chunks:
+		a_chunks = chunks[subtask_a]
+		b_chunks = chunks[subtask_b]
+		if len(a_chunks) > 0:
+			chunks[merged_subtask] = a_chunk
+		elif len(b_chunks) > 0:
+			chunks[merged_subtask] = b_chunk
+		else:
+			chunks[merged_subtask] = neg_chunk
+		del chunks[subtask_a]
+		del chunks[subtask_b]
+
+
 def main():
 	# Read all the data instances
 	task_instances_dict, tag_statistics, question_keys_and_tags = load_from_pickle(args.data_file)
@@ -873,12 +909,95 @@ def main():
 			with open(cache_pred_file, 'w') as f:
 				json.dump(pred_chunks, f)
 
+		reduced_subtasks = []
+		for subtask in subtasks_list:
+			if subtask == 'gender_female':
+				continue
+			elif subtask == 'gender_male':
+				subtask = 'gender'
+			reduced_subtasks.append(subtask)
+
 		with open(args.predict_file, 'w') as f:
 			# save predictions as jsonl at args.predict_file
 			for doc_id, doc_chunks in pred_chunks.items():
-				# TODO not correct, need to properly do this for all subtasks
+				# need to properly do this for all subtasks
+				# tested_positive
+				# 	- age 						correct
+				# 	- close_contact		correct
+				# 	- employer				correct
+				# 	- gender					correct: need to merge "Male" & "Female", "Not Specified"
+				# 	- name						correct
+				# 	- recent_travel		correct
+				# 	- relation				correct: "Yes" or "No", "Not Specified"
+				# 	- when						correct
+				# 	- where						correct
+				#
+				# tested_negative
+				# 	- age							correct
+				# 	- close_contact		correct
+				# 	- gender					correct: need to merge "Male" & "Female", "Not Specified"
+				# 	- how_long				correct
+				# 	- name						correct
+				# 	- relation				correct: "Yes" or "No", "Not Specified"
+				# 	- when						correct
+				# 	- where						correct
+				#
+				# can_not_test
+				# 	- relation 				correct: "Yes" or "No", "Not Specified"
+				# 	- symptoms				correct: "Yes" or "No", "Not Specified"
+				# 	- name						correct
+				# 	- when						correct
+				# 	- where						correct
+				#
+				# death
+				# 	- age							correct
+				# 	- name						correct
+				# 	- relation 				correct: "Yes" or "No", "Not Specified"
+				# 	- symptoms				correct: "Yes" or "No", "Not Specified"
+				# 	- when						correct
+				# 	- where						correct
+				#
+				# cure
+				# 	- opinion					correct: "no_cure", "not_effective", "effective", "NO_CONSENSUS"
+				# 	- what_cure				correct
+				# 	- who_cure				correct
+
+				merge_subtasks(
+					'gender_male',
+					'gender_female',
+					'gender',
+					doc_chunks,
+					a_chunk=['Male'],
+					b_chunk=['Female'],
+					neg_chunk=[]
+				)
+
+				replace_binary(
+					'relation',
+					doc_chunks,
+					pos_chunk=["Yes"],
+					neg_chunk=[]
+				)
+
+				replace_binary(
+					'symptoms',
+					doc_chunks,
+					pos_chunk=["Yes"],
+					neg_chunk=[]
+				)
+
+				replace_binary(
+					'opinion',
+					doc_chunks,
+					pos_chunk=["effective"],
+					neg_chunk=["not_effective"]
+				)
+
+				replace_i('name', doc_chunks)
+				replace_i('close_contact', doc_chunks)
+
 				subtask_predictions = {}
-				for subtask in subtasks_list:
+				for subtask in reduced_subtasks:
 					subtask_chunks = list(doc_chunks[subtask])
 					if len(subtask_chunks) == 0:
 						subtask_chunks.append('Not Specified')
