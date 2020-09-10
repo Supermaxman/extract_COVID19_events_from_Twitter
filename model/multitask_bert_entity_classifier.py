@@ -513,6 +513,9 @@ def save_predictions(pred_chunks, subtasks_list, task, pred_file, pred_header='p
 	with open(pred_file, 'w') as f:
 		# save predictions as jsonl at args.predict_file
 		for doc_id, doc_chunks in pred_chunks.items():
+			for subtask in subtasks_list:
+				if subtask not in doc_chunks:
+					doc_chunks[subtask] = list()
 			# need to properly do this for all subtasks
 			# tested_positive
 			# 	- age 						correct
@@ -592,10 +595,7 @@ def save_predictions(pred_chunks, subtasks_list, task, pred_file, pred_header='p
 
 			subtask_predictions = {}
 			for subtask in reduced_subtasks:
-				if subtask in doc_chunks:
-					subtask_chunks = list(doc_chunks[subtask])
-				else:
-					subtask_chunks = list()
+				subtask_chunks = list(doc_chunks[subtask])
 				if len(subtask_chunks) == 0:
 					subtask_chunks.append('Not Specified')
 				subtask_predictions[f'part2-{subtask}.Response'] = subtask_chunks
