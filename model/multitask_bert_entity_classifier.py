@@ -502,84 +502,93 @@ def main():
 	task_instances_dict, tag_statistics, question_keys_and_tags = load_from_pickle(args.data_file)
 	data, subtasks_list = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics)
 
-	if args.retrain:
-		logging.info(f"Creating and training the model from {pre_model_name} ")
-		# Create the save_directory if not exists
-		make_dir_if_not_exists(args.save_directory)
-		# Initialize tokenizer and model with pretrained weights
+	model_config_file = os.path.join(args.output_dir, "model_config.json")
+	results_file = os.path.join(args.output_dir, "results.json")
+	load_model = True
+	if args.predict:
+		cache_pred_file = args.predict_file.replace('.jsonl', '-cache.json')
+		if os.path.exists(cache_pred_file):
+			logging.info("Loading prediction dataset predictions from cache...")
+			pred_chunks = json.load(open(cache_pred_file))
+			load_model = False
 
-		tokenizer = BertTokenizer.from_pretrained(pre_model_name)
-		config = BertConfig.from_pretrained(pre_model_name)
-		config.subtasks = subtasks_list
-		# print(config)
-		model = MultiTaskBertForCovidEntityClassification.from_pretrained(pre_model_name, config=config)
+	if load_model:
+		if args.retrain:
+			logging.info(f"Creating and training the model from {pre_model_name} ")
+			# Create the save_directory if not exists
+			make_dir_if_not_exists(args.save_directory)
+			# Initialize tokenizer and model with pretrained weights
 
-		# Add new tokens in tokenizer
-		if 'twitter' in pre_model_name:
-			new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>"]}
+			tokenizer = BertTokenizer.from_pretrained(pre_model_name)
+			config = BertConfig.from_pretrained(pre_model_name)
+			config.subtasks = subtasks_list
+			# print(config)
+			model = MultiTaskBertForCovidEntityClassification.from_pretrained(pre_model_name, config=config)
+
+			# Add new tokens in tokenizer
+			if 'twitter' in pre_model_name:
+				new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>"]}
+			else:
+				new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>", "<URL>", "@USER"]}
+
+			# new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>"]}
+			tokenizer.add_special_tokens(new_special_tokens_dict)
+
+			# Add the new embeddings in the weights
+			print("Embeddings type:", model.bert.embeddings.word_embeddings.weight.data.type())
+			print("Embeddings shape:", model.bert.embeddings.word_embeddings.weight.data.size())
+			embedding_size = model.bert.embeddings.word_embeddings.weight.size(1)
+			new_embeddings = torch.FloatTensor(len(new_special_tokens_dict["additional_special_tokens"]), embedding_size).uniform_(-0.1, 0.1)
+			# new_embeddings = torch.FloatTensor(2, embedding_size).uniform_(-0.1, 0.1)
+			print("new_embeddings shape:", new_embeddings.size())
+			new_embedding_weight = torch.cat((model.bert.embeddings.word_embeddings.weight.data,new_embeddings), 0)
+			model.bert.embeddings.word_embeddings.weight.data = new_embedding_weight
+			print("Embeddings shape:", model.bert.embeddings.word_embeddings.weight.data.size())
+			# Update model config vocab size
+			model.config.vocab_size = model.config.vocab_size + len(new_special_tokens_dict["additional_special_tokens"])
 		else:
-			new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>", "<URL>", "@USER"]}
+			# Load the tokenizer and model from the save_directory
+			tokenizer = BertTokenizer.from_pretrained(args.save_directory)
+			model = MultiTaskBertForCovidEntityClassification.from_pretrained(args.save_directory)
+		model.to(device)
 
-		# new_special_tokens_dict = {"additional_special_tokens": ["<E>", "</E>"]}
-		tokenizer.add_special_tokens(new_special_tokens_dict)
-		
-		# Add the new embeddings in the weights
-		print("Embeddings type:", model.bert.embeddings.word_embeddings.weight.data.type())
-		print("Embeddings shape:", model.bert.embeddings.word_embeddings.weight.data.size())
-		embedding_size = model.bert.embeddings.word_embeddings.weight.size(1)
-		new_embeddings = torch.FloatTensor(len(new_special_tokens_dict["additional_special_tokens"]), embedding_size).uniform_(-0.1, 0.1)
-		# new_embeddings = torch.FloatTensor(2, embedding_size).uniform_(-0.1, 0.1)
-		print("new_embeddings shape:", new_embeddings.size())
-		new_embedding_weight = torch.cat((model.bert.embeddings.word_embeddings.weight.data,new_embeddings), 0)
-		model.bert.embeddings.word_embeddings.weight.data = new_embedding_weight
-		print("Embeddings shape:", model.bert.embeddings.word_embeddings.weight.data.size())
-		# Update model config vocab size
-		model.config.vocab_size = model.config.vocab_size + len(new_special_tokens_dict["additional_special_tokens"])
-	else:
-		# Load the tokenizer and model from the save_directory
-		tokenizer = BertTokenizer.from_pretrained(args.save_directory)
-		model = MultiTaskBertForCovidEntityClassification.from_pretrained(args.save_directory)
-	model.to(device)
+		entity_start_token_id = tokenizer.convert_tokens_to_ids(["<E>"])[0]
+		entity_end_token_id = tokenizer.convert_tokens_to_ids(["</E>"])[0]
 
-	entity_start_token_id = tokenizer.convert_tokens_to_ids(["<E>"])[0]
-	entity_end_token_id = tokenizer.convert_tokens_to_ids(["</E>"])[0]
+		logging.info(f"Task dataset for task: {args.task} loaded from {args.data_file}.")
 
-	logging.info(f"Task dataset for task: {args.task} loaded from {args.data_file}.")
-	
-	model_config = dict()
-	results = dict()
+		model_config = dict()
+		results = dict()
 
-	# Split the data into train, dev and test and shuffle the train segment
-	train_data, dev_data, test_data = split_multitask_instances_in_train_dev_test(data)
-	random.shuffle(train_data)		# shuffle happens in-place
-	logging.info("Train Data:")
-	total_train_size, pos_subtasks_train_size, neg_subtasks_train_size = log_multitask_data_statistics(train_data, model.subtasks)
-	logging.info("Dev Data:")
-	total_dev_size, pos_subtasks_dev_size, neg_subtasks_dev_size = log_multitask_data_statistics(dev_data, model.subtasks)
-	logging.info("Test Data:")
-	total_test_size, pos_subtasks_test_size, neg_subtasks_test_size = log_multitask_data_statistics(test_data, model.subtasks)
-	logging.info("\n")
-	model_config["train_data"] = {"size":total_train_size, "pos":pos_subtasks_train_size, "neg":neg_subtasks_train_size}
-	model_config["dev_data"] = {"size":total_dev_size, "pos":pos_subtasks_dev_size, "neg":neg_subtasks_dev_size}
-	model_config["test_data"] = {"size":total_test_size, "pos":pos_subtasks_test_size, "neg":neg_subtasks_test_size}
-	
-	# Extract subtasks data for dev and test
-	dev_subtasks_data = split_data_based_on_subtasks(dev_data, model.subtasks)
-	test_subtasks_data = split_data_based_on_subtasks(test_data, model.subtasks)
+		# Split the data into train, dev and test and shuffle the train segment
+		train_data, dev_data, test_data = split_multitask_instances_in_train_dev_test(data)
+		random.shuffle(train_data)		# shuffle happens in-place
+		logging.info("Train Data:")
+		total_train_size, pos_subtasks_train_size, neg_subtasks_train_size = log_multitask_data_statistics(train_data, subtasks_list)
+		logging.info("Dev Data:")
+		total_dev_size, pos_subtasks_dev_size, neg_subtasks_dev_size = log_multitask_data_statistics(dev_data, subtasks_list)
+		logging.info("Test Data:")
+		total_test_size, pos_subtasks_test_size, neg_subtasks_test_size = log_multitask_data_statistics(test_data, subtasks_list)
+		logging.info("\n")
+		model_config["train_data"] = {"size":total_train_size, "pos":pos_subtasks_train_size, "neg":neg_subtasks_train_size}
+		model_config["dev_data"] = {"size":total_dev_size, "pos":pos_subtasks_dev_size, "neg":neg_subtasks_dev_size}
+		model_config["test_data"] = {"size":total_test_size, "pos":pos_subtasks_test_size, "neg":neg_subtasks_test_size}
 
-	# Load the instances into pytorch dataset
-	train_dataset = COVID19TaskDataset(train_data)
-	dev_dataset = COVID19TaskDataset(dev_data)
-	test_dataset = COVID19TaskDataset(test_data)
-	logging.info("Loaded the datasets into Pytorch datasets")
+		# Extract subtasks data for dev and test
+		dev_subtasks_data = split_data_based_on_subtasks(dev_data, subtasks_list)
+		test_subtasks_data = split_data_based_on_subtasks(test_data, subtasks_list)
 
-	tokenize_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id)
-	train_dataloader = DataLoader(train_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=True, num_workers=1, collate_fn=tokenize_collator)
-	dev_dataloader = DataLoader(dev_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
-	test_dataloader = DataLoader(test_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
-	# TODO for unlabeled predictions:
-	# predict_collator = TokenizeCollator(tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id, predict=True)
-	logging.info("Created train and test dataloaders with batch aggregation")
+		# Load the instances into pytorch dataset
+		train_dataset = COVID19TaskDataset(train_data)
+		dev_dataset = COVID19TaskDataset(dev_data)
+		test_dataset = COVID19TaskDataset(test_data)
+		logging.info("Loaded the datasets into Pytorch datasets")
+
+		tokenize_collator = TokenizeCollator(tokenizer, subtasks_list, entity_start_token_id, entity_end_token_id)
+		train_dataloader = DataLoader(train_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=True, num_workers=1, collate_fn=tokenize_collator)
+		dev_dataloader = DataLoader(dev_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
+		test_dataloader = DataLoader(test_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=tokenize_collator)
+		logging.info("Created train and test dataloaders with batch aggregation")
 
 	# Only retrain if needed
 	if args.retrain:
@@ -639,7 +648,7 @@ def main():
 		# Loss trajectory for epochs
 		epoch_train_loss = list()
 		# Dev validation trajectory
-		dev_subtasks_validation_statistics = {subtask: list() for subtask in model.subtasks}
+		dev_subtasks_validation_statistics = {subtask: list() for subtask in subtasks_list}
 		for epoch in range(epochs):
 			pbar = tqdm(train_dataloader)
 			logging.info(f"Initiating Epoch {epoch+1}:")
@@ -656,7 +665,7 @@ def main():
 			dev_steps = int(n_steps / dev_log_frequency)
 			for step, batch in enumerate(pbar):
 				# Upload labels of each subtask to device
-				for subtask in model.subtasks:
+				for subtask in subtasks_list:
 					subtask_labels = batch["gold_labels"][subtask]
 					subtask_labels = subtask_labels.to(device)
 
@@ -775,8 +784,6 @@ def main():
 	else:
 		logging.info("No training needed.")
 
-	model_config_file = os.path.join(args.output_dir, "model_config.json")
-	results_file = os.path.join(args.output_dir, "results.json")
 	# run test data evaluation
 	if not predict:
 		logging.info("Running test eval on labeled data...")
@@ -862,11 +869,7 @@ def main():
 
 	# run prediction on unlabeld data
 	else:
-		cache_pred_file = args.predict_file.replace('.jsonl', '-cache.json')
-		if os.path.exists(cache_pred_file):
-			logging.info("Loading prediction dataset predictions from cache...")
-			pred_chunks = json.load(open(cache_pred_file))
-		else:
+		if load_model:
 			logging.info("Running predictions on unlabeled data...")
 			logging.info("Loading the pred dataset...")
 			task_instances_dict, _, _ = load_from_pickle(args.predict_data_file)
@@ -876,12 +879,12 @@ def main():
 			logging.info("Loading the pred dataset into Pytorch datasets")
 
 			pred_tokenize_collator = TokenizeCollator(
-				tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id, predict=True)
+				tokenizer, subtasks_list, entity_start_token_id, entity_end_token_id, predict=True)
 			pred_dataloader = DataLoader(
 				pred_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0,
 				collate_fn=pred_tokenize_collator)
 
-			pred_subtask_data = split_data_based_on_subtasks(pred_data, model.subtasks, has_labels=False)
+			pred_subtask_data = split_data_based_on_subtasks(pred_data, subtasks_list, has_labels=False)
 
 			logging.info("Predictions cache not found, creating predictions...")
 			if os.path.exists(results_file):
