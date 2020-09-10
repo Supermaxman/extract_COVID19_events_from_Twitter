@@ -1057,6 +1057,9 @@ def main():
 		)
 
 		logging.info("Writing test dataset gold annotations to file...")
+		for doc_id in list(gold_chunks.keys()):
+			if doc_id not in pred_chunks:
+				del gold_chunks['doc_id']
 		logging.info(f"gold len: {len(gold_chunks)}")
 		save_predictions(
 			gold_chunks,
