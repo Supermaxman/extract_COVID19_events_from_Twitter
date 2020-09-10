@@ -349,9 +349,12 @@ def get_raw_scores(data, prediction_scores, positive_only=False):
 
 def get_threshold_predictions(data, prediction_scores, THRESHOLD=0.5):
 	predicted_chunks_for_each_instance = dict()
+	assert len(data) == len(prediction_scores)
 	for example, prediction_score in zip(data, prediction_scores):
 		doc_id = example['doc_id']
-		chunk = example['original_chunk']
+		original_chunk = example['text'][example['chunk_start_text_id']:example['chunk_end_text_id']]
+		candidate_chunk = example['chunk']
+		chunk = original_chunk if candidate_chunk != 'AUTHOR OF THE TWEET' else candidate_chunk
 		# print(text)
 		# print(chunk)
 		# print(original_text)

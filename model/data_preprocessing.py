@@ -302,11 +302,9 @@ def make_instances_from_dataset(dataset, has_labels=True, question_keys_and_tags
 
 			# If there are more then one candidate slot with the same candidate chunk then simply keep the first occurrence. Remove the rest.
 			current_candidate_chunks = set()
-			original_chunk_map = {}
 			for candidate_chunk_with_id in final_candidate_chunks_with_token_id:
 				candidate_chunk_id = candidate_chunk_with_id[0]
 				candidate_chunk = candidate_chunk_with_id[1]
-				original_candidate_chunk = candidate_chunk
 
 				if candidate_chunk.lower() == 'coronavirus':
 					continue
@@ -333,7 +331,6 @@ def make_instances_from_dataset(dataset, has_labels=True, question_keys_and_tags
 					skipped_chunks += 1
 					continue
 				else:
-					original_chunk_map[candidate_chunk] = original_candidate_chunk
 					# Add to the known list and keep going
 					current_candidate_chunks.add(candidate_chunk)
 				# assert candidate_chunk == text[chunk_start_text_id:chunk_end_text_id+1]
@@ -388,6 +385,7 @@ def make_instances_from_dataset(dataset, has_labels=True, question_keys_and_tags
 					final_tweet_tokens[:chunk_start_id] + [Q_TOKEN] + final_tweet_tokens[chunk_end_id:]
 				)
 				# text, chunk, chunk_id, chunk_start_text_id, chunk_end_text_id, tokenized_tweet, tokenized_tweet_with_masked_chunk, gold_chunk, label
+				original_chunk_text = text[chunk_start_text_id:chunk_end_text_id]
 				instance = {
 					'text': text,
 					'chunk': candidate_chunk,
@@ -397,7 +395,7 @@ def make_instances_from_dataset(dataset, has_labels=True, question_keys_and_tags
 					'tokenized_tweet': tokenized_tweet,
 					'tokenized_tweet_with_masked_chunk': tokenized_tweet_with_masked_chunk,
 					'doc_id': id,
-					'original_chunk': original_chunk_map[candidate_chunk]
+					'original_chunk': original_chunk_text if candidate_chunk != 'AUTHOR OF THE TWEET' else candidate_chunk
 				}
 				if has_labels:
 					instance['gold_chunk'] = tagged_chunks
