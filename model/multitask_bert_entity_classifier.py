@@ -592,7 +592,10 @@ def save_predictions(pred_chunks, subtasks_list, task, pred_file, pred_header='p
 
 			subtask_predictions = {}
 			for subtask in reduced_subtasks:
-				subtask_chunks = list(doc_chunks[subtask])
+				if subtask in doc_chunks:
+					subtask_chunks = list(doc_chunks[subtask])
+				else:
+					subtask_chunks = list()
 				if len(subtask_chunks) == 0:
 					subtask_chunks.append('Not Specified')
 				subtask_predictions[f'part2-{subtask}.Response'] = subtask_chunks
