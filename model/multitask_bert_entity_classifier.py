@@ -324,7 +324,7 @@ class TokenizeCollator(object):
 			attention_mask[entity_end_positions[:, 0], entity_end_positions[:, 1]] = 0
 		# width of span within <E> ... </E>
 		entity_span_widths = entity_end_positions[:, 1] - entity_start_positions[:, 1] - 1
-		entity_span_widths = torch.clamp(entity_span_widths, 0, 100)
+		entity_span_widths = torch.clamp(entity_span_widths, 0, 99)
 		if model_flags['modify_masks']:
 			entity_start_positions[:, 1] = entity_start_positions[:, 1] + 1
 			entity_end_positions[:, 1] = entity_end_positions[:, 1]
@@ -347,6 +347,12 @@ class TokenizeCollator(object):
 
 		if entity_end_positions.size(0) == 0:
 			entity_end_positions = torch.zeros(input_ids.size(0), 2).long()
+
+		# Fix masks which are all False to point to CLS
+		seq_mask_sum = entity_span_masks.long().sum(axis=-1)
+		# for i in range(entity_span_masks.shape[0]):
+		# 	if seq_mask_sum[i] == 0:
+		entity_span_masks[seq_mask_sum == 0, 0] = True
 
 		# Verify that the number of labels for each subtask is equal to the number of instances
 		for subtask in self.subtasks:
@@ -867,7 +873,7 @@ def main():
 			pred_tokenize_collator = TokenizeCollator(
 				tokenizer, model.subtasks, entity_start_token_id, entity_end_token_id, predict=True)
 			pred_dataloader = DataLoader(
-				pred_dataset, batch_size=2 * POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0,
+				pred_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0,
 				collate_fn=pred_tokenize_collator)
 
 			pred_subtask_data = split_data_based_on_subtasks(pred_data, model.subtasks, has_labels=False)
