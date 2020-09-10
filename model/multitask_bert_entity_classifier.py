@@ -997,7 +997,10 @@ def main():
 				doc_subtask_examples = defaultdict(set)
 				for example in gold_subtask_examples:
 					if example['label'] == 1:
-						doc_subtask_examples[example['doc_id']].add(example['gold_chunk'])
+						original_chunk = example['text'][example['chunk_start_text_id']:example['chunk_end_text_id']]
+						candidate_chunk = example['chunk']
+						chunk = original_chunk if candidate_chunk != 'AUTHOR OF THE TWEET' else candidate_chunk
+						doc_subtask_examples[example['doc_id']].add(chunk)
 				for doc_id, doc_chunks in doc_subtask_examples.items():
 					gold_chunks[doc_id][subtask] = list(doc_chunks)
 
