@@ -1048,6 +1048,7 @@ def main():
 				json.dump(gold_chunks, f)
 
 		logging.info("Writing test dataset predictions to file...")
+		logging.info(f"pred len: {len(pred_chunks)}")
 		save_predictions(
 			pred_chunks,
 			subtasks_list,
@@ -1056,6 +1057,7 @@ def main():
 		)
 
 		logging.info("Writing test dataset gold annotations to file...")
+		logging.info(f"gold len: {len(gold_chunks)}")
 		save_predictions(
 			gold_chunks,
 			subtasks_list,
