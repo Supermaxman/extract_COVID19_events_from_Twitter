@@ -456,6 +456,11 @@ def compute_threshold_predictions(model, data, prediction_scores, thresholds):
 	return predicted_chunks
 
 
+def remove_subtask(subtask, chunks):
+	if subtask in chunks:
+		del chunks['subtask']
+
+
 def replace_binary(subtask, chunks, pos_chunk, neg_chunk):
 	if subtask in chunks:
 		sub_chunks = chunks[subtask]
@@ -920,6 +925,10 @@ def main():
 		for subtask in subtasks_list:
 			if subtask == 'gender_female':
 				continue
+			if subtask == 'how_long':
+				continue
+			if subtask == 'symptoms' and args.task == 'death':
+				continue
 			elif subtask == 'gender_male':
 				subtask = 'gender'
 			reduced_subtasks.append(subtask)
@@ -943,7 +952,7 @@ def main():
 				# 	- age							correct
 				# 	- close_contact		correct
 				# 	- gender					correct: need to merge "Male" & "Female", "Not Specified"
-				# 	- how_long				correct
+				# 	- how_long				skip
 				# 	- name						correct
 				# 	- relation				correct: "Yes" or "No", "Not Specified"
 				# 	- when						correct
@@ -968,6 +977,7 @@ def main():
 				# 	- opinion					correct: "no_cure", "not_effective", "effective", "NO_CONSENSUS"
 				# 	- what_cure				correct
 				# 	- who_cure				correct
+				remove_subtask('how_long', doc_chunks)
 
 				merge_subtasks(
 					'gender_male',
