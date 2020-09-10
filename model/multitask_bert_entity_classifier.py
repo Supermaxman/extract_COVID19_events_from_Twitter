@@ -497,6 +497,112 @@ def merge_subtasks(subtask_a, subtask_b, merged_subtask, chunks, a_chunk, b_chun
 		del chunks[subtask_b]
 
 
+def save_predictions(pred_chunks, subtasks_list, task, pred_file, pred_header='predicted_annotation'):
+	reduced_subtasks = []
+	for subtask in subtasks_list:
+		if subtask == 'gender_female':
+			continue
+		if subtask == 'how_long':
+			continue
+		if subtask == 'symptoms' and task == 'death':
+			continue
+		elif subtask == 'gender_male':
+			subtask = 'gender'
+		reduced_subtasks.append(subtask)
+
+	with open(pred_file, 'w') as f:
+		# save predictions as jsonl at args.predict_file
+		for doc_id, doc_chunks in pred_chunks.items():
+			# need to properly do this for all subtasks
+			# tested_positive
+			# 	- age 						correct
+			# 	- close_contact		correct
+			# 	- employer				correct
+			# 	- gender					correct: need to merge "Male" & "Female", "Not Specified"
+			# 	- name						correct
+			# 	- recent_travel		correct
+			# 	- relation				correct: "Yes" or "No", "Not Specified"
+			# 	- when						correct
+			# 	- where						correct
+			#
+			# tested_negative
+			# 	- age							correct
+			# 	- close_contact		correct
+			# 	- gender					correct: need to merge "Male" & "Female", "Not Specified"
+			# 	- how_long				skip
+			# 	- name						correct
+			# 	- relation				correct: "Yes" or "No", "Not Specified"
+			# 	- when						correct
+			# 	- where						correct
+			#
+			# can_not_test
+			# 	- relation 				correct: "Yes" or "No", "Not Specified"
+			# 	- symptoms				correct: "Yes" or "No", "Not Specified"
+			# 	- name						correct
+			# 	- when						correct
+			# 	- where						correct
+			#
+			# death
+			# 	- age							correct
+			# 	- name						correct
+			# 	- relation 				correct: "Yes" or "No", "Not Specified"
+			# 	- symptoms				correct: "Yes" or "No", "Not Specified"
+			# 	- when						correct
+			# 	- where						correct
+			#
+			# cure
+			# 	- opinion					correct: "no_cure", "not_effective", "effective", "NO_CONSENSUS"
+			# 	- what_cure				correct
+			# 	- who_cure				correct
+			remove_subtask('how_long', doc_chunks)
+
+			merge_subtasks(
+				'gender_male',
+				'gender_female',
+				'gender',
+				doc_chunks,
+				a_chunk=['Male'],
+				b_chunk=['Female'],
+				neg_chunk=[]
+			)
+
+			replace_binary(
+				'relation',
+				doc_chunks,
+				pos_chunk=["Yes"],
+				neg_chunk=[]
+			)
+
+			replace_binary(
+				'symptoms',
+				doc_chunks,
+				pos_chunk=["Yes"],
+				neg_chunk=[]
+			)
+
+			replace_binary(
+				'opinion',
+				doc_chunks,
+				pos_chunk=["effective"],
+				neg_chunk=["not_effective"]
+			)
+
+			replace_i('name', doc_chunks)
+			replace_i('close_contact', doc_chunks)
+
+			subtask_predictions = {}
+			for subtask in reduced_subtasks:
+				subtask_chunks = list(doc_chunks[subtask])
+				if len(subtask_chunks) == 0:
+					subtask_chunks.append('Not Specified')
+				subtask_predictions[f'part2-{subtask}.Response'] = subtask_chunks
+			doc_predictions = {
+				'id': doc_id,
+				pred_header: subtask_predictions
+			}
+			f.write(json.dumps(doc_predictions) + '\n')
+
+
 def main():
 	# Read all the data instances
 	task_instances_dict, tag_statistics, question_keys_and_tags = load_from_pickle(args.data_file)
@@ -510,6 +616,7 @@ def main():
 		if os.path.exists(cache_pred_file):
 			logging.info("Loading prediction dataset predictions from cache...")
 			pred_chunks = json.load(open(cache_pred_file))
+			gold_chunks = json.load(open(cache_pred_file.replace('.json', '-gold.json')))
 			load_model = False
 
 	if load_model:
@@ -871,20 +978,28 @@ def main():
 	else:
 		if load_model:
 			logging.info("Running predictions on unlabeled data...")
-			logging.info("Loading the pred dataset...")
-			task_instances_dict, _, _ = load_from_pickle(args.predict_data_file)
-			pred_data, _ = get_multitask_instances_for_valid_tasks(task_instances_dict, tag_statistics, has_labels=False)
+			logging.info("Loading the test dataset...")
+			# test_subtasks_data = split_data_based_on_subtasks(test_data, subtasks_list)
 
-			pred_dataset = COVID19TaskDataset(pred_data)
-			logging.info("Loading the pred dataset into Pytorch datasets")
+			pred_dataset = COVID19TaskDataset(test_data)
+			logging.info("Loading the test dataset into Pytorch datasets")
 
 			pred_tokenize_collator = TokenizeCollator(
-				tokenizer, subtasks_list, entity_start_token_id, entity_end_token_id, predict=True)
+				tokenizer, subtasks_list, entity_start_token_id, entity_end_token_id)
 			pred_dataloader = DataLoader(
 				pred_dataset, batch_size=POSSIBLE_BATCH_SIZE, shuffle=False, num_workers=0,
 				collate_fn=pred_tokenize_collator)
 
-			pred_subtask_data = split_data_based_on_subtasks(pred_data, subtasks_list, has_labels=False)
+			pred_subtask_data = split_data_based_on_subtasks(test_data, subtasks_list)
+			gold_chunks = defaultdict(dict)
+			for subtask in subtasks_list:
+				gold_subtask_examples = pred_subtask_data[subtask]
+				doc_subtask_examples = defaultdict(set)
+				for example in gold_subtask_examples:
+					if example['label'] == 1:
+						doc_subtask_examples[example['doc_id']].add(example['gold_chunk'])
+				for doc_id, doc_chunks in doc_subtask_examples.items():
+					gold_chunks[doc_id][subtask] = list(doc_chunks)
 
 			logging.info("Predictions cache not found, creating predictions...")
 			if os.path.exists(results_file):
@@ -923,110 +1038,25 @@ def main():
 			with open(cache_pred_file, 'w') as f:
 				json.dump(pred_chunks, f)
 
-		logging.info("Writing prediction dataset predictions to file...")
-		reduced_subtasks = []
-		for subtask in subtasks_list:
-			if subtask == 'gender_female':
-				continue
-			if subtask == 'how_long':
-				continue
-			if subtask == 'symptoms' and args.task == 'death':
-				continue
-			elif subtask == 'gender_male':
-				subtask = 'gender'
-			reduced_subtasks.append(subtask)
+			with open(cache_pred_file.replace('.json', '-gold.json'), 'w') as f:
+				json.dump(gold_chunks, f)
 
-		with open(args.predict_file, 'w') as f:
-			# save predictions as jsonl at args.predict_file
-			for doc_id, doc_chunks in pred_chunks.items():
-				# need to properly do this for all subtasks
-				# tested_positive
-				# 	- age 						correct
-				# 	- close_contact		correct
-				# 	- employer				correct
-				# 	- gender					correct: need to merge "Male" & "Female", "Not Specified"
-				# 	- name						correct
-				# 	- recent_travel		correct
-				# 	- relation				correct: "Yes" or "No", "Not Specified"
-				# 	- when						correct
-				# 	- where						correct
-				#
-				# tested_negative
-				# 	- age							correct
-				# 	- close_contact		correct
-				# 	- gender					correct: need to merge "Male" & "Female", "Not Specified"
-				# 	- how_long				skip
-				# 	- name						correct
-				# 	- relation				correct: "Yes" or "No", "Not Specified"
-				# 	- when						correct
-				# 	- where						correct
-				#
-				# can_not_test
-				# 	- relation 				correct: "Yes" or "No", "Not Specified"
-				# 	- symptoms				correct: "Yes" or "No", "Not Specified"
-				# 	- name						correct
-				# 	- when						correct
-				# 	- where						correct
-				#
-				# death
-				# 	- age							correct
-				# 	- name						correct
-				# 	- relation 				correct: "Yes" or "No", "Not Specified"
-				# 	- symptoms				correct: "Yes" or "No", "Not Specified"
-				# 	- when						correct
-				# 	- where						correct
-				#
-				# cure
-				# 	- opinion					correct: "no_cure", "not_effective", "effective", "NO_CONSENSUS"
-				# 	- what_cure				correct
-				# 	- who_cure				correct
-				remove_subtask('how_long', doc_chunks)
+		logging.info("Writing test dataset predictions to file...")
+		save_predictions(
+			pred_chunks,
+			subtasks_list,
+			args.task,
+			args.predict_file,
+		)
 
-				merge_subtasks(
-					'gender_male',
-					'gender_female',
-					'gender',
-					doc_chunks,
-					a_chunk=['Male'],
-					b_chunk=['Female'],
-					neg_chunk=[]
-				)
-
-				replace_binary(
-					'relation',
-					doc_chunks,
-					pos_chunk=["Yes"],
-					neg_chunk=[]
-				)
-
-				replace_binary(
-					'symptoms',
-					doc_chunks,
-					pos_chunk=["Yes"],
-					neg_chunk=[]
-				)
-
-				replace_binary(
-					'opinion',
-					doc_chunks,
-					pos_chunk=["effective"],
-					neg_chunk=["not_effective"]
-				)
-
-				replace_i('name', doc_chunks)
-				replace_i('close_contact', doc_chunks)
-
-				subtask_predictions = {}
-				for subtask in reduced_subtasks:
-					subtask_chunks = list(doc_chunks[subtask])
-					if len(subtask_chunks) == 0:
-						subtask_chunks.append('Not Specified')
-					subtask_predictions[f'part2-{subtask}.Response'] = subtask_chunks
-				doc_predictions = {
-					'id': doc_id,
-					'predicted_annotation': subtask_predictions
-				}
-				f.write(json.dumps(doc_predictions) + '\n')
+		logging.info("Writing test dataset gold annotations to file...")
+		save_predictions(
+			gold_chunks,
+			subtasks_list,
+			args.task,
+			args.predict_file.replace('.jsonl', '-golden.jsonl'),
+			'golden_annotation'
+		)
 
 		logging.info("Done!")
 

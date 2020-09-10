@@ -25,7 +25,7 @@ parser.add_argument("-t", "--tasks", help="Tasks to run", type=str, default='tes
 args = parser.parse_args()
 
 config = json.load(open(args.config))
-team_name = 'HLTRI'
+team_name = 'test'
 team_prediction_folder = os.path.join('data', team_name)
 if not os.path.exists(team_prediction_folder):
   os.mkdir(team_prediction_folder)
