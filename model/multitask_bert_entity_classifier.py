@@ -997,8 +997,10 @@ def main():
 			gold_chunks = defaultdict(dict)
 			for subtask in subtasks_list:
 				gold_subtask_examples = pred_subtask_data[subtask]
-				doc_subtask_examples = defaultdict(set)
+				doc_subtask_examples = {}
 				for example in gold_subtask_examples:
+					if example['doc_id'] not in doc_subtask_examples:
+						doc_subtask_examples[example['doc_id']] = set()
 					if example['label'] == 1:
 						original_chunk = example['text'][example['chunk_start_text_id']:example['chunk_end_text_id']]
 						candidate_chunk = example['chunk']
@@ -1057,9 +1059,9 @@ def main():
 		)
 
 		logging.info("Writing test dataset gold annotations to file...")
-		for doc_id in list(gold_chunks.keys()):
-			if doc_id not in pred_chunks:
-				del gold_chunks['doc_id']
+		# for doc_id in list(gold_chunks.keys()):
+		# 	if doc_id not in pred_chunks:
+		# 		del gold_chunks['doc_id']
 		logging.info(f"gold len: {len(gold_chunks)}")
 		save_predictions(
 			gold_chunks,
