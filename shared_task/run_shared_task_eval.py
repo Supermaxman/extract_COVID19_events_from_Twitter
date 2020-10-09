@@ -121,7 +121,7 @@ if __name__ == '__main__':
 
     ##### Attention: replace YOUR_TEAM_NAME with your actual team name
     ## YOUR_TEAM_NAME = 'OSU_NLP'
-    input_path = '../data/' + 'HLTRI' +'/'
+    input_path = '../data/' + 'HLTRI_SARCASM' +'/'
     golden_path = '../data/shared_task-test_set-eval/'
     errors_path = input_path + 'errors/'
     text_path = '../data/shared_task_test_set_final/'
@@ -132,7 +132,8 @@ if __name__ == '__main__':
     print('team name:', team_name)
 
     ### score each category
-    category_flag = ['positive', 'negative', 'can_not_test', 'death', 'cure']
+    # category_flag = ['positive', 'negative', 'can_not_test', 'death', 'cure']
+    category_flag = ['cure']
 
     curr_team = {}
     curr_team['team_name'] = team_name
@@ -141,8 +142,8 @@ if __name__ == '__main__':
     all_category_results = {}
     for each_category in category_flag:
         ## read in data
-        curr_pred = readJSONLine(input_path + team_name + '-' + each_category + '.jsonl')
-        curr_sol = readJSONLine(golden_path + each_category + '_sol.jsonl')
+        curr_pred = readJSONLine(input_path + team_name + '-' + each_category + '-sarcasm.jsonl')
+        curr_sol = readJSONLine(golden_path + each_category + '_sol-sarcasm.jsonl')
         err_file = errors_path + team_name + '-' + each_category + '.txt'
         tweets = readJSONLine(text_path + 'shared_task-test-' + each_category + '.jsonl')
         text_lookup = {tweet['id']: tweet['text'] for tweet in tweets}
