@@ -89,7 +89,7 @@ for taskname, task_dict in task_type_to_datapath_dict.items():
   tested_tasks = list()
   logging.info(f"Running Mutlitask BERT Entity Classifier model on {processed_out_file}")
   # NOTE: After fixing the USER and URL tags
-  output_dir = os.path.join("results", f"multitask_{model_type}_{run_name}_entity_classifier_fixed", taskname)
+  output_dir = os.path.join("results", f"multitask_{model_type}_{run_name}_entity_classifier_fixed_sarcasm", taskname)
   make_dir_if_not_exists(output_dir)
   results_file = os.path.join(output_dir, "results.json")
   model_config_file = os.path.join(output_dir, "model_config.json")
@@ -99,7 +99,7 @@ for taskname, task_dict in task_type_to_datapath_dict.items():
     f"-d {processed_out_file} " \
     f"-t {taskname} " \
     f"-o {output_dir} " \
-    f"-s saved_models/multitask_{model_type}_{run_name}_entity_classifier_fixed/{taskname} " \
+    f"-s saved_models/multitask_{model_type}_{run_name}_entity_classifier_fixed_sarcasm/{taskname} " \
     f"-pm {pre_model_name} " \
     f"-mf '{json.dumps(model_flags)}' "
   if RETRAIN_FLAG:
