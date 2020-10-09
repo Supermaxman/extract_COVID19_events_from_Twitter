@@ -142,7 +142,9 @@ def get_multitask_instances_for_valid_tasks(task_instances, tag_statistics, has_
 	return all_multitask_instances, subtasks
 
 
-def split_multitask_instances_in_train_dev_test(multitask_instances, TRAIN_RATIO = 0.6, DEV_RATIO = 0.15):
+def split_multitask_instances_in_train_dev_test(multitask_instances, TRAIN_RATIO = 0.9, DEV_RATIO = 0.10):
+	# OLD TRAIN_RATIO = 0.6, DEV_RATIO = 0.15
+	# NEW TRAIN_RATIO = 0.9, DEV_RATIO = 0.10
 	# Group the multitask_instances by original tweet
 	original_tweets = dict()
 	original_tweets_list = list()

@@ -990,6 +990,13 @@ def main():
 				)
 
 				replace_binary(
+					'sarcasm',
+					doc_chunks,
+					pos_chunk=["Yes"],
+					neg_chunk=[]
+				)
+
+				replace_binary(
 					'relation',
 					doc_chunks,
 					pos_chunk=["Yes"],
