@@ -45,8 +45,7 @@ def get_label_for_key_from_annotation(key, annotation, candidate_chunk):
 	tagged_chunks = annotation[key]
 	label = 0
 	if tagged_chunks:
-		# if key is "name", "who_cure", and "I" is a gold chunk then add "AUTHOR OF THE TWEET" as a gold chunk
-		if key in ["name", "who_cure", "close_contact", "opinion"] and ("I" in tagged_chunks or "i" in tagged_chunks):
+		if key in ["name", "who_cure", "close_contact", "opinion", "sarcasm"] and ("I" in tagged_chunks or "i" in tagged_chunks):
 			tagged_chunks.append("AUTHOR OF THE TWEET")
 
 		for tagged_chunk in tagged_chunks:
@@ -338,7 +337,7 @@ def make_instances_from_dataset(dataset, has_labels=True, question_keys_and_tags
 				if has_labels:
 					# Find gold labels for the current question and candidate chunk
 					if question_tag in ["relation", "gender_male", "gender_female", "believe", "binary-relation", "binary-symptoms",
-															"symptoms", "opinion"]:
+															"symptoms", "opinion", "sarcasm"]:
 						# If the question is a yes/no question. It is for the name candidate chunk
 						special_tagged_chunks = get_tagged_label_for_key_from_annotation(question_key, annotation_tweet_tokens)
 						try:

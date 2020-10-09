@@ -19,59 +19,34 @@ logging.getLogger().setLevel(logging.INFO)
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("-c", "--config", help="Path to the config file that contains the experiment details", type=str, required=True)
+parser.add_argument(
+  "-c", "--config", help="Path to the config file that contains the experiment details", type=str,
+  default='configs/hsw_iter2_t4.json'
+)
 # tested_positive,tested_negative,can_not_test,death,cure
-parser.add_argument("-t", "--tasks", help="Tasks to run", type=str, default='tested_positive')
+parser.add_argument("-t", "--tasks", help="Tasks to run", type=str, default='cure')
 args = parser.parse_args()
 
 config = json.load(open(args.config))
-team_name = 'HLTRI'
+team_name = 'HLTRI_SARCASM'
 team_prediction_folder = os.path.join('data', team_name)
 if not os.path.exists(team_prediction_folder):
   os.mkdir(team_prediction_folder)
 
 task_type_to_datapath_dict = {
-  "tested_positive": {
-    "data_in_file": "./data/positive-add_text.jsonl",
-    "processed_out_file": "./data/test_positive.pkl",
-    "predict_data_in_file": "./data/shared_task_test_set_final/shared_task-test-positive.jsonl",
-    "predict_processed_out_file": "./data/shared_task_test_set_final/shared_task_test_positive.pkl",
-    "predict_file": os.path.join(team_prediction_folder, f'{team_name}-positive.jsonl')
-  },
-  "tested_negative": {
-    "data_in_file": "./data/negative-add_text.jsonl",
-    "processed_out_file": "./data/test_negative.pkl",
-    "predict_data_in_file": "./data/shared_task_test_set_final/shared_task-test-negative.jsonl",
-    "predict_processed_out_file": "./data/shared_task_test_set_final/shared_task_test_negative.pkl",
-    "predict_file": os.path.join(team_prediction_folder, f'{team_name}-negative.jsonl')
-  },
-  "can_not_test": {
-    "data_in_file": "./data/can_not_test-add_text.jsonl",
-    "processed_out_file": "./data/can_not_test.pkl",
-    "predict_data_in_file": "./data/shared_task_test_set_final/shared_task-test-can_not_test.jsonl",
-    "predict_processed_out_file": "./data/shared_task_test_set_final/shared_task_can_not_test.pkl",
-    "predict_file": os.path.join(team_prediction_folder, f'{team_name}-can_not_test.jsonl')
-  },
-  "death": {
-    "data_in_file": "./data/death-add_text.jsonl",
-    "processed_out_file": "./data/death.pkl",
-    "predict_data_in_file": "./data/shared_task_test_set_final/shared_task-test-death.jsonl",
-    "predict_processed_out_file": "./data/shared_task_test_set_final/shared_task_death.pkl",
-    "predict_file": os.path.join(team_prediction_folder, f'{team_name}-death.jsonl')
-  },
   "cure": {
-    "data_in_file": "./data/cure_and_prevention-add_text.jsonl",
-    "processed_out_file": "./data/cure_and_prevention.pkl",
+    "data_in_file": "./data/cure_and_prevention-add_text-sarcasm.jsonl",
+    "processed_out_file": "./data/cure_and_prevention-sarcasm.pkl",
     "predict_data_in_file": "./data/shared_task_test_set_final/shared_task-test-cure.jsonl",
-    "predict_processed_out_file": "./data/shared_task_test_set_final/shared_task_cure.pkl",
-    "predict_file": os.path.join(team_prediction_folder, f'{team_name}-cure.jsonl')
+    "predict_processed_out_file": "./data/shared_task_test_set_final/shared_task_cure-sarcasm.pkl",
+    "predict_file": os.path.join(team_prediction_folder, f'{team_name}-cure-sarcasm.jsonl')
   }
 }
 
 # REDO_DATA_FLAG = True
-REDO_DATA_FLAG = False
-RETRAIN_FLAG = False
-PREDICT_FLAG = True
+REDO_DATA_FLAG = True
+RETRAIN_FLAG = True
+PREDICT_FLAG = False
 # run_tasks = {"tested_positive", "tested_negative", "can_not_test", "death", "cure"}
 run_tasks = set(args.tasks.split(','))
 model_type = config['model_type']
