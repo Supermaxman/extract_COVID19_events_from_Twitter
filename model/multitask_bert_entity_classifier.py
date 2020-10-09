@@ -427,13 +427,13 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, hide_pr
 	return all_predictions, all_prediction_scores, all_labels
 
 
-def compute_thresholds(model, data, prediction_scores, threshold_range):
-	best_thresholds = {subtask: 0.5 for subtask in model.subtasks}
-	best_F1s = {subtask: 0.0 for subtask in model.subtasks}
-	best_stats = {subtask: None for subtask in model.subtasks}
-	subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
+def compute_thresholds(subtasks, data, prediction_scores, threshold_range):
+	best_thresholds = {subtask: 0.5 for subtask in subtasks}
+	best_F1s = {subtask: 0.0 for subtask in subtasks}
+	best_stats = {subtask: None for subtask in subtasks}
+	subtasks_t_F1_P_Rs = {subtask: list() for subtask in subtasks}
 
-	for subtask in model.subtasks:
+	for subtask in subtasks:
 		dev_subtask_data = data[subtask]
 		dev_subtask_prediction_scores = prediction_scores[subtask]
 		for t in threshold_range:
@@ -725,15 +725,21 @@ def main():
 					# Put the model in evaluation mode--the dropout layers behave differently
 					# during evaluation.
 					model.eval()
-					_, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
+					_, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(
+						dev_dataloader,
+						model,
+						device,
+						args.task + "_dev",
+						True
+					)
 					TP = 0
 					FP = 0
 					FN = 0
-					# course search for epoch eval
-					thresholds = np.arange(0.0, 1.0, 0.05)
+
+					thresholds = np.arange(0.01, 1.0, 0.01)
 					# subtasks_t_F1_P_Rs[subtask].append((t, dev_F1, dev_P, dev_R, dev_TP + dev_FN, dev_TP, dev_FP, dev_FN))
 					_, best_dev_F1s, _, best_stats = compute_thresholds(
-						model,
+						model.subtasks,
 						dev_subtasks_data,
 						dev_prediction_scores,
 						thresholds
@@ -809,12 +815,12 @@ def main():
 
 		# Find best threshold for each subtask based on dev set performance
 		# thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-		thresholds = np.arange(0.0, 1.0, 0.01)
+		thresholds = np.arange(0.01, 1.0, 0.01)
 
 		_, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
 
 		best_dev_thresholds, best_dev_F1s, _, _ = compute_thresholds(
-			model,
+			model.subtasks,
 			dev_subtasks_data,
 			dev_prediction_scores,
 			thresholds
@@ -897,9 +903,9 @@ def main():
 					args.task + "_dev"
 				)
 				# thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-				thresholds = np.arange(0.0, 1.0, 0.01)
+				thresholds = np.arange(0.01, 1.0, 0.01)
 				best_dev_thresholds, _, _, _ = compute_thresholds(
-					model,
+					model.subtasks,
 					dev_subtasks_data,
 					dev_prediction_scores,
 					thresholds
