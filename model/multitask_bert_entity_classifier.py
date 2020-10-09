@@ -889,27 +889,22 @@ def main():
 			pred_subtask_data = split_data_based_on_subtasks(pred_data, subtasks_list, has_labels=False)
 
 			logging.info("Predictions cache not found, creating predictions...")
-			if os.path.exists(results_file):
-				logging.info("Loading dev thresholds...")
-				results = json.load(open(results_file))
-				best_dev_thresholds = results["best_dev_threshold"]
-			else:
-				logging.info("Results file not found, computing dev thresholds...")
-				logging.info("Making dev dataset predictions...")
-				_, dev_prediction_scores, _ = make_predictions_on_dataset(
-					dev_dataloader,
-					model,
-					device,
-					args.task + "_dev"
-				)
-				# thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-				thresholds = np.arange(0.01, 1.0, 0.01)
-				best_dev_thresholds, _, _, _ = compute_thresholds(
-					model.subtasks,
-					dev_subtasks_data,
-					dev_prediction_scores,
-					thresholds
-				)
+			logging.info("Results file not found, computing dev thresholds...")
+			logging.info("Making test dataset predictions...")
+			_, test_prediction_scores, _ = make_predictions_on_dataset(
+				test_dataloader,
+				model,
+				device,
+				args.task + "_test"
+			)
+			# thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+			thresholds = np.arange(0.01, 1.0, 0.01)
+			best_test_thresholds, _, _, _ = compute_thresholds(
+				model.subtasks,
+				test_subtasks_data,
+				test_prediction_scores,
+				thresholds
+			)
 
 			logging.info("Making prediction dataset predictions...")
 			_, prediction_scores, _ = make_predictions_on_dataset(
@@ -921,7 +916,7 @@ def main():
 			)
 
 			logging.info("Computing prediction dataset predictions with thresholds...")
-			pred_chunks = compute_threshold_predictions(model, pred_subtask_data, prediction_scores, best_dev_thresholds)
+			pred_chunks = compute_threshold_predictions(model, pred_subtask_data, prediction_scores, best_test_thresholds)
 
 			with open(cache_pred_file, 'w') as f:
 				json.dump(pred_chunks, f)
