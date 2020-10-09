@@ -438,6 +438,7 @@ def main():
 	print(dataset[0].keys())
 	question_keys_and_tags = None
 	if args.predict:
+		logging.info(f"Loading train file...")
 		_, _, question_keys_and_tags = load_from_pickle(args.train_save_file)
 	task_instances_dict, tag_statistics, question_keys_and_tags = make_instances_from_dataset(dataset, not args.predict, question_keys_and_tags)
 	# Save in pickle file
