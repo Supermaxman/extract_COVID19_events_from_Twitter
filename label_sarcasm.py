@@ -58,7 +58,7 @@ if os.path.exists(output_file):
 tweets = read_json_lines(data_file)
 print(f'Number of tweets: {len(tweets)}')
 
-for idx, tweet in tqdm(tweets):
+for idx, tweet in tqdm(enumerate(tweets)):
 	tweet_id = tweet['id']
 	if tweet_id in seen_ids:
 		continue
