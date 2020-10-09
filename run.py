@@ -38,7 +38,7 @@ task_type_to_datapath_dict = {
     "data_in_file": "./data/cure_and_prevention-add_text-sarcasm.jsonl",
     "processed_out_file": "./data/cure_and_prevention-sarcasm.pkl",
     "predict_data_in_file": "./data/shared_task_test_set_final/shared_task-test-cure.jsonl",
-    "predict_processed_out_file": "./data/shared_task_test_set_final/shared_task_cure-sarcasm.pkl",
+    "predict_processed_out_file": "./data/shared_task_test_set_final/shared_task_cure.pkl",
     "predict_file": os.path.join(team_prediction_folder, f'{team_name}-cure-sarcasm.jsonl')
   }
 }
