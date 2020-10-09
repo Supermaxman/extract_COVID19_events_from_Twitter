@@ -358,7 +358,13 @@ def make_instances_from_dataset(dataset, has_labels=True, question_keys_and_tags
 							special_question_label = get_label_from_tagged_label(tagged_label)
 
 						if question_tag == "opinion":
-							# question_label, tagged_chunks = get_label_for_key_from_annotation("part2-who_cure.Response", annotation_tweet_tokens, candidate_chunk)
+							tagged_chunks = []
+							if candidate_chunk == "AUTHOR OF THE TWEET":
+								question_label = 1
+								tagged_chunks.append("AUTHOR OF THE TWEET")
+							else:
+								question_label = 0
+						elif question_tag == 'sarcasm':
 							tagged_chunks = []
 							if candidate_chunk == "AUTHOR OF THE TWEET":
 								question_label = 1
@@ -366,8 +372,11 @@ def make_instances_from_dataset(dataset, has_labels=True, question_keys_and_tags
 							else:
 								question_label = 0
 						else:
-							question_label, tagged_chunks = get_label_for_key_from_annotation("part2-name.Response",
-																																								annotation_tweet_tokens, candidate_chunk)
+							question_label, tagged_chunks = get_label_for_key_from_annotation(
+								"part2-name.Response",
+								annotation_tweet_tokens,
+								candidate_chunk
+							)
 						question_label = question_label & special_question_label
 						if question_label == 0:
 							tagged_chunks = []
