@@ -26,13 +26,16 @@ def write_json_lines(data, path):
 
 def read_ids(file_path):
 	tweet_ids = set()
+	num_sarcastic = 0
 	with open(file_path, 'r') as f:
 		for line in f:
 			line = line.strip()
 			if line:
 				tweet = json.loads(line)
+				if tweet_labels['golden_annotation']['part2-sarcasm.Response'][0].lower() == 'yes':
+					num_sarcastic += 1
 				tweet_ids.add(tweet['id'])
-	return tweet_ids
+	return tweet_ids, num_sarcastic
 
 
 parser = argparse.ArgumentParser()
@@ -58,13 +61,14 @@ output_file = args.output_file
 
 seen_ids = set()
 if os.path.exists(output_file):
-	seen_ids = read_ids(output_file)
+	seen_ids, num_sarcastic = read_ids(output_file)
 
 tweets = read_json_lines(data_file)
 labels = read_json_lines(label_file)
 labels = {l['id']: l for l in labels}
 num_tweets = len(tweets)
 print(f'Number of tweets: {num_tweets}')
+print(f'Num sarcastic: {num_sarcastic}')
 
 for idx, tweet in enumerate(tweets):
 	tweet_id = tweet['id']
