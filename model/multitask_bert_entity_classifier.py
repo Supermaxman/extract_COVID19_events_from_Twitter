@@ -1,6 +1,7 @@
 
 import json
 import argparse
+import numpy as np
 
 parser = argparse.ArgumentParser()
 
@@ -429,18 +430,24 @@ def make_predictions_on_dataset(dataloader, model, device, dataset_name, hide_pr
 def compute_thresholds(model, data, prediction_scores, threshold_range):
 	best_thresholds = {subtask: 0.5 for subtask in model.subtasks}
 	best_F1s = {subtask: 0.0 for subtask in model.subtasks}
+	best_stats = {subtask: None for subtask in model.subtasks}
 	subtasks_t_F1_P_Rs = {subtask: list() for subtask in model.subtasks}
 
 	for subtask in model.subtasks:
 		dev_subtask_data = data[subtask]
 		dev_subtask_prediction_scores = prediction_scores[subtask]
 		for t in threshold_range:
-			dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores, THRESHOLD=t)
+			dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(
+				dev_subtask_data,
+				dev_subtask_prediction_scores,
+				THRESHOLD=t
+			)
 			subtasks_t_F1_P_Rs[subtask].append((t, dev_F1, dev_P, dev_R, dev_TP + dev_FN, dev_TP, dev_FP, dev_FN))
 			if dev_F1 > best_F1s[subtask]:
 				best_thresholds[subtask] = t
 				best_F1s[subtask] = dev_F1
-	return best_thresholds, best_F1s, subtasks_t_F1_P_Rs
+				best_stats[subtask] = dev_F1, dev_P, dev_R, dev_TP + dev_FN, dev_TP, dev_FP, dev_FN
+	return best_thresholds, best_F1s, subtasks_t_F1_P_Rs, best_stats
 
 
 def compute_threshold_predictions(model, data, prediction_scores, thresholds):
@@ -718,14 +725,23 @@ def main():
 					# Put the model in evaluation mode--the dropout layers behave differently
 					# during evaluation.
 					model.eval()
-					dev_predicted_labels, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
+					_, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
 					TP = 0
 					FP = 0
 					FN = 0
+					# course search for epoch eval
+					thresholds = np.arange(0.0, 1.0, 0.05)
+					# subtasks_t_F1_P_Rs[subtask].append((t, dev_F1, dev_P, dev_R, dev_TP + dev_FN, dev_TP, dev_FP, dev_FN))
+					_, best_dev_F1s, _, best_stats = compute_thresholds(
+						model,
+						dev_subtasks_data,
+						dev_prediction_scores,
+						thresholds
+					)
+
 					for subtask in model.subtasks:
-						dev_subtask_data = dev_subtasks_data[subtask]
-						dev_subtask_prediction_scores = dev_prediction_scores[subtask]
-						dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN = get_TP_FP_FN(dev_subtask_data, dev_subtask_prediction_scores)
+						dev_F1, dev_P, dev_R, _, dev_TP, dev_FP, dev_FN = best_stats[subtask]
+
 						logging.info(f"Subtask:{subtask:>15}\tN={dev_TP + dev_FN:.0f}\tF1={dev_F1:.4f}\tP={dev_P:.4f}\tR={dev_R:.4f}\tTP={dev_TP:.0f}\tFP={dev_FP:.0f}\tFN={dev_FN:.0f}")
 						dev_subtasks_validation_statistics[subtask].append((epoch + 1, step + 1, dev_TP + dev_FN, dev_F1, dev_P, dev_R, dev_TP, dev_FP, dev_FN))
 						TP += dev_TP
@@ -792,11 +808,12 @@ def main():
 		model_config["epochs"] = epochs
 
 		# Find best threshold for each subtask based on dev set performance
-		thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-		# test_predicted_labels, test_prediction_scores, test_gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task, True)
-		dev_predicted_labels, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
+		# thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+		thresholds = np.arange(0.0, 1.0, 0.01)
 
-		best_dev_thresholds, best_dev_F1s, dev_subtasks_t_F1_P_Rs = compute_thresholds(
+		_, dev_prediction_scores, dev_gold_labels = make_predictions_on_dataset(dev_dataloader, model, device, args.task + "_dev", True)
+
+		best_dev_thresholds, best_dev_F1s, _, _ = compute_thresholds(
 			model,
 			dev_subtasks_data,
 			dev_prediction_scores,
@@ -806,12 +823,11 @@ def main():
 		# Save the best dev threshold and dev_F1 in results dict
 		results["best_dev_threshold"] = best_dev_thresholds
 		results["best_dev_F1s"] = best_dev_F1s
-		results["dev_t_F1_P_Rs"] = dev_subtasks_t_F1_P_Rs
 
 		# Evaluate on Test
 		logging.info("Testing on test dataset")
 
-		predicted_labels, prediction_scores, gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task)
+		_, prediction_scores, gold_labels = make_predictions_on_dataset(test_dataloader, model, device, args.task)
 
 		# Test
 		for subtask in model.subtasks:
@@ -820,32 +836,12 @@ def main():
 			# print(len(prediction_scores[subtask]))
 			# print(len(test_subtasks_data[subtask]))
 			results[subtask] = dict()
-			cm = metrics.confusion_matrix(gold_labels[subtask], predicted_labels[subtask])
-			classification_report = metrics.classification_report(gold_labels[subtask], predicted_labels[subtask], output_dict=True)
-			logging.info(cm)
-			logging.info(metrics.classification_report(gold_labels[subtask], predicted_labels[subtask]))
-			results[subtask]["CM"] = cm.tolist()			# Storing it as list of lists instead of numpy.ndarray
-			results[subtask]["Classification Report"] = classification_report
 
-			# SQuAD style EM and F1 evaluation for all test cases and for positive test cases (i.e. for cases where annotators had a gold annotation)
-			EM_score, F1_score, total = get_raw_scores(test_subtasks_data[subtask], prediction_scores[subtask])
-			logging.info("Word overlap based SQuAD evaluation style metrics:")
-			logging.info(f"Total number of cases: {total}")
-			logging.info(f"EM_score: {EM_score:.4f}")
-			logging.info(f"F1_score: {F1_score:.4f}")
-			results[subtask]["SQuAD_EM"] = EM_score
-			results[subtask]["SQuAD_F1"] = F1_score
-			results[subtask]["SQuAD_total"] = total
-			pos_EM_score, pos_F1_score, pos_total = get_raw_scores(test_subtasks_data[subtask], prediction_scores[subtask], positive_only=True)
-			logging.info(f"Total number of Positive cases: {pos_total}")
-			logging.info(f"Pos. EM_score: {pos_EM_score:.4f}")
-			logging.info(f"Pos. F1_score: {pos_F1_score:.4f}")
-			results[subtask]["SQuAD_Pos. EM"] = pos_EM_score
-			results[subtask]["SQuAD_Pos. F1"] = pos_F1_score
-			results[subtask]["SQuAD_Pos. EM_F1_total"] = pos_total
-
-			# New evaluation suggested by Alan
-			F1, P, R, TP, FP, FN = get_TP_FP_FN(test_subtasks_data[subtask], prediction_scores[subtask], THRESHOLD=best_dev_thresholds[subtask])
+			F1, P, R, TP, FP, FN = get_TP_FP_FN(
+				test_subtasks_data[subtask],
+				prediction_scores[subtask],
+				THRESHOLD=best_dev_thresholds[subtask]
+			)
 			logging.info("New evaluation scores:")
 			logging.info(f"F1: {F1:.4f}")
 			logging.info(f"Precision: {P:.4f}")
@@ -900,8 +896,9 @@ def main():
 					device,
 					args.task + "_dev"
 				)
-				thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-				best_dev_thresholds, _, _ = compute_thresholds(
+				# thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+				thresholds = np.arange(0.0, 1.0, 0.01)
+				best_dev_thresholds, _, _, _ = compute_thresholds(
 					model,
 					dev_subtasks_data,
 					dev_prediction_scores,
