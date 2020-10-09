@@ -736,7 +736,7 @@ def main():
 					FP = 0
 					FN = 0
 
-					thresholds = np.arange(0.01, 1.0, 0.01)
+					thresholds = np.arange(0.0, 1.0, 0.01)
 					# subtasks_t_F1_P_Rs[subtask].append((t, dev_F1, dev_P, dev_R, dev_TP + dev_FN, dev_TP, dev_FP, dev_FN))
 					_, best_dev_F1s, _, best_stats = compute_thresholds(
 						model.subtasks,
