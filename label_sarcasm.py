@@ -56,18 +56,20 @@ if os.path.exists(output_file):
 	seen_ids = read_ids(output_file)
 
 tweets = read_json_lines(data_file)
-print(f'Number of tweets: {len(tweets)}')
+num_tweets = len(tweets)
+print(f'Number of tweets: {num_tweets}')
 
-for idx, tweet in tqdm(enumerate(tweets)):
+for idx, tweet in enumerate(tweets):
 	tweet_id = tweet['id']
 	if tweet_id in seen_ids:
 		continue
 	text = tweet['text']
 	print('-----------------------')
-	print(f'Tweet {tweet_id}')
+	print(f'[{idx+1}/{num_tweets}] Tweet {tweet_id}')
 	print('Text:')
 	print(text)
 	print('-----------------------')
+	label = 'Not Specified'
 	needs_label = True
 	while needs_label:
 		label = input('Contains sarcasm? (y/n): ')
@@ -82,3 +84,5 @@ for idx, tweet in tqdm(enumerate(tweets)):
 			print(f'Unknown label: {label}')
 			needs_label = True
 	print('-----------------------')
+	tweet['annotation']['part2-sarcasm.Response'] = [label]
+	write_json_lines([tweet], output_file)
