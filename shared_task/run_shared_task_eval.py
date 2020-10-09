@@ -124,6 +124,7 @@ if __name__ == '__main__':
     input_path = '../data/' + 'HLTRI' +'/'
     golden_path = '../data/shared_task-test_set-eval/'
     errors_path = input_path + 'errors/'
+    text_path = '../data/shared_task_test_set_final/'
     if not os.path.exists(errors_path):
      os.mkdir(errors_path)
 
@@ -143,24 +144,35 @@ if __name__ == '__main__':
         curr_pred = readJSONLine(input_path + team_name + '-' + each_category + '.jsonl')
         curr_sol = readJSONLine(golden_path + each_category + '_sol.jsonl')
         err_file = errors_path + team_name + '-' + each_category + '.txt'
+        tweets = readJSONLine(text_path + 'shared_task-test-' + each_category + '.jsonl')
+        text_lookup = {tweet['id']: tweet['text'] for tweet in tweets}
         ## generate result
         curr_result, curr_errors = runEvaluation(curr_pred, curr_sol)
         with open(err_file, 'w') as f:
-            for error in curr_errors:
-                f.write('-------------------\n')
-
-                f.write('-------------------\n')
+            for t, t_errs in curr_errors.items():
+                for (err_type, tweet_id, predicted_chunk, golden_chunks) in t_errs:
+                    f.write('-------------------\n')
+                    f.write(f'Tweet ID: {tweet_id}\n')
+                    text = text_lookup[tweet_id]
+                    f.write(f'Tweet text: {text}\n')
+                    f.write(f'Slot {t}\n')
+                    f.write(f'Error type {err_type}\n')
+                    f.write(f'Predicted Wrong: {predicted_chunk}\n')
+                    f.write(f'Gold: {golden_chunks}\n')
+                    f.write('-------------------\n')
 
         ## print
         t_p = curr_result["micro"]["P"]
         t_r = curr_result["micro"]["R"]
         t_f1 = curr_result["micro"]["F1"]
         print('----------------------------')
-        print(f'{team_name} {each_category}\t\t\tP: {t_p:.4f}\tR: {t_r:.4f}\tF1: {t_f1:.4f}')
+        print(f'{team_name+" "+each_category:<20}\tP: {t_p:.4f}\tR: {t_r:.4f}\tF1: {t_f1:.4f}')
         print('----------------------------')
         for t, t_results in curr_result.items():
             if t != 'micro':
-                print(f'\t{t}\t\tP: {t_results["P"]:.4f}\tR: {t_results["R"]:.4f}\tF1: {t_results["F1"]:.4f}')
+                # print(f'{t:<20}\tP: {t_results["P"]:.4f}\tR: {t_results["R"]:.4f}\tF1: {t_results["F1"]:.4f}\tN: {t_results["N"]:.0f}')
+                fixed_t = t.replace("_", "\\_")
+                print(f'{fixed_t:<20} & {t_results["P"]*100:<5.2f} & {t_results["R"]*100:<5.2f} & {t_results["F1"]*100:<5.2f} & {t_results["N"]:<5.0f} \\\\')
         ## append result
         print('----------------------------')
         all_category_results[each_category] = curr_result
@@ -188,5 +200,5 @@ if __name__ == '__main__':
     curr_team['overall_perf'] = merged_performance
 
     print('-----')
-    print(f'{team_name} overall \t\t\tP: {all_cate_P:.4f}\tR: {all_cate_R:.4f}\tF1: {all_cate_F1:.4f}')
+    print(f'{team_name + " overall":<20}\tP: {all_cate_P:.4f}\tR: {all_cate_R:.4f}\tF1: {all_cate_F1:.4f}\tN: {all_cate_TP+all_cate_FN:.0f}')
     print('======')
