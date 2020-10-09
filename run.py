@@ -23,12 +23,34 @@ parser.add_argument(
   "-c", "--config", help="Path to the config file that contains the experiment details", type=str,
   default='configs/hsw_iter2_t4.json'
 )
+
+parser.add_argument(
+  "-rd", "--redo_data", help="Re-pickle data",
+  default=False, action="store_true"
+)
+parser.add_argument(
+  "-rt", "--retrain", help="Re-train model",
+  default=False, action="store_true"
+)
+parser.add_argument(
+  "-pd", "--predict", help="Make test predictions",
+  default=False, action="store_true"
+)
+
 # tested_positive,tested_negative,can_not_test,death,cure
 parser.add_argument("-t", "--tasks", help="Tasks to run", type=str, default='cure')
+parser.add_argument("-tm", "--team_name", help="Name of team for run", type=str, default='HLTRI_SARCASM')
 args = parser.parse_args()
 
+team_name = args.team_name
+# REDO_DATA_FLAG = True
+REDO_DATA_FLAG = args.redo_data
+RETRAIN_FLAG = args.retrain
+PREDICT_FLAG = args.predict
+# run_tasks = {"tested_positive", "tested_negative", "can_not_test", "death", "cure"}
+run_tasks = set(args.tasks.split(','))
+
 config = json.load(open(args.config))
-team_name = 'HLTRI_SARCASM'
 team_prediction_folder = os.path.join('data', team_name)
 if not os.path.exists(team_prediction_folder):
   os.mkdir(team_prediction_folder)
@@ -43,12 +65,6 @@ task_type_to_datapath_dict = {
   }
 }
 
-# REDO_DATA_FLAG = True
-REDO_DATA_FLAG = True
-RETRAIN_FLAG = True
-PREDICT_FLAG = False
-# run_tasks = {"tested_positive", "tested_negative", "can_not_test", "death", "cure"}
-run_tasks = set(args.tasks.split(','))
 model_type = config['model_type']
 run_name = config['run_name']
 gpu_id = config['gpu_id']
