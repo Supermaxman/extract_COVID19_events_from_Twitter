@@ -32,7 +32,7 @@ def read_ids(file_path):
 			line = line.strip()
 			if line:
 				tweet = json.loads(line)
-				if tweet_labels['golden_annotation']['part2-sarcasm.Response'][0].lower() == 'yes':
+				if tweet['golden_annotation']['part2-sarcasm.Response'][0].lower() == 'yes':
 					num_sarcastic += 1
 				tweet_ids.add(tweet['id'])
 	return tweet_ids, num_sarcastic
