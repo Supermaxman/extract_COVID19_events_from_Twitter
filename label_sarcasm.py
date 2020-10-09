@@ -62,7 +62,7 @@ for idx, tweet in tqdm(enumerate(tweets)):
 	tweet_id = tweet['id']
 	if tweet_id in seen_ids:
 		continue
-	text = tweet['full_text']
+	text = tweet['text']
 	print('-----------------------')
 	print(f'Tweet {tweet_id}')
 	print('Text:')
