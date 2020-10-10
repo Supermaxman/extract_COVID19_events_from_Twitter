@@ -14,7 +14,7 @@ def readJSONLine(path):
     return output
 
 ### evaluation script
-def runEvaluation(system_predictions, golden_predictions):
+def runEvaluation(system_predictions, golden_predictions, skip_sarcasm_micro):
 
     ## read in files
     golden_predictions_dict = {}
@@ -93,10 +93,15 @@ def runEvaluation(system_predictions, golden_predictions):
     #         print('P:', curr_task['P'], 'R:', curr_task['R'], 'F1:', curr_task['F1'])
     #         print('=======')
 
-    ### calculate micro-F1
-    all_TP = np.sum([i[1]['TP'] for i in result.items()])
-    all_FP = np.sum([i[1]['FP'] for i in result.items()])
-    all_FN = np.sum([i[1]['FN'] for i in result.items()])
+    if skip_sarcasm_micro:
+        all_TP = np.sum([t_value['TP'] for t_name, t_value in result.items() if t_name != 'sarcasm'])
+        all_FP = np.sum([t_value['FP'] for t_name, t_value in result.items() if t_name != 'sarcasm'])
+        all_FN = np.sum([t_value['FN'] for t_name, t_value in result.items() if t_name != 'sarcasm'])
+    else:
+        ### calculate micro-F1
+        all_TP = np.sum([i[1]['TP'] for i in result.items()])
+        all_FP = np.sum([i[1]['FP'] for i in result.items()])
+        all_FN = np.sum([i[1]['FN'] for i in result.items()])
 
     all_P = all_TP / (all_TP + all_FP)
     all_R = all_TP / (all_TP + all_FN)
@@ -125,6 +130,7 @@ if __name__ == '__main__':
     golden_path = '../data/shared_task-test_set-eval/'
     errors_path = input_path + 'errors/'
     text_path = '../data/shared_task_test_set_final/'
+    skip_sarcasm_micro = True
     if not os.path.exists(errors_path):
      os.mkdir(errors_path)
 
@@ -148,7 +154,7 @@ if __name__ == '__main__':
         tweets = readJSONLine(text_path + 'shared_task-test-' + each_category + '.jsonl')
         text_lookup = {tweet['id']: tweet['text'] for tweet in tweets}
         ## generate result
-        curr_result, curr_errors = runEvaluation(curr_pred, curr_sol)
+        curr_result, curr_errors = runEvaluation(curr_pred, curr_sol, skip_sarcasm_micro)
         with open(err_file, 'w') as f:
             for t, t_errs in curr_errors.items():
                 for (err_type, tweet_id, predicted_chunk, golden_chunks) in t_errs:
